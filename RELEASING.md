@@ -1,32 +1,11 @@
 # Releasing `rozenite-i18n-devtools`
 
-## One-time: point the package at your repo
+## Repository
 
-Three fields are placeholders. Replace `CHANGE-ME` with your GitHub handle:
-
-```bash
-GH=your-handle
-cd packages/rozenite-i18n-devtools
-python3 - "$GH" <<'PY'
-import json, pathlib, sys, collections
-gh = sys.argv[1]
-p = pathlib.Path('package.json')
-d = json.loads(p.read_text(), object_pairs_hook=collections.OrderedDict)
-base = f"https://github.com/{gh}/rozenite-i18n-devtools"
-d['repository'] = {'type': 'git', 'url': f"{base}.git"}
-d['homepage'] = f"{base}#readme"
-d['bugs'] = {'url': f"{base}/issues"}
-p.write_text(json.dumps(d, indent=2) + '\n')
-print('repository ->', base)
-PY
-```
-
-Then create the repo on GitHub and push:
-
-```bash
-git remote add origin https://github.com/$GH/rozenite-i18n-devtools.git
-git push -u origin main
-```
+`repository`, `homepage` and `bugs` point at
+<https://github.com/sbaiahmed1/rozenite-i18n-devtools>. If the repo is ever renamed or moved,
+update all three in `package.json` — npm renders them in the package sidebar and a stale link
+reads as abandonware.
 
 ## Every release
 

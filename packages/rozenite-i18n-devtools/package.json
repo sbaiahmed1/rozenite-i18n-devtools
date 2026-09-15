@@ -84,10 +84,10 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/CHANGE-ME/rozenite-i18n-devtools.git"
+    "url": "https://github.com/sbaiahmed1/rozenite-i18n-devtools.git"
   },
-  "homepage": "https://github.com/CHANGE-ME/rozenite-i18n-devtools#readme",
+  "homepage": "https://github.com/sbaiahmed1/rozenite-i18n-devtools#readme",
   "bugs": {
-    "url": "https://github.com/CHANGE-ME/rozenite-i18n-devtools/issues"
+    "url": "https://github.com/sbaiahmed1/rozenite-i18n-devtools/issues"
   }
 }
