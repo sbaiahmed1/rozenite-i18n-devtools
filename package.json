@@ -1,0 +1,9 @@
+{
+  "name": "rozenite-plugins",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "devDependencies": {
+    "rozenite": "2.4.0"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "name": "rozenite-i18n-devtools",
+  "version": "0.1.0",
+  "description": "Runtime i18n inspector for React Native DevTools \u2014 missing keys, per-locale coverage, and live locale switching.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/react-native/cjs/react-native.js",
+  "module": "./dist/react-native/react-native.js",
+  "types": "./dist/react-native/react-native.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/react-native/react-native.d.ts",
+      "import": "./dist/react-native/react-native.js",
+      "require": "./dist/react-native/cjs/react-native.js"
+    },
+    "./sdk": {
+      "development": "./sdk.ts",
+      "types": "./dist/sdk/sdk.d.ts",
+      "default": "./dist/sdk/sdk.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "react-native.ts",
+    "sdk.ts",
+    "rozenite.config.ts",
+    "src",
+    "!src/**/__tests__",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "rozenite build",
+    "dev": "rozenite dev",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --run --passWithNoTests"
+  },
+  "dependencies": {
+    "@rozenite/plugin-bridge": "^2.4.0",
+    "@rozenite/ui": "^2.4.0"
+  },
+  "devDependencies": {
+    "@rozenite/vite-plugin": "^2.4.0",
+    "@types/react": "~19.1.10",
+    "i18next": "^26.4.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-web": "^0.21.2",
+    "rozenite": "^2.4.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "i18next": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "i18next": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "rozenite",
+    "react-native",
+    "devtools",
+    "i18n",
+    "i18next",
+    "localization"
+  ],
+  "author": "Ahmed <ahmedclubust@gmail.com>",
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CHANGE-ME/rozenite-i18n-devtools.git"
+  },
+  "homepage": "https://github.com/CHANGE-ME/rozenite-i18n-devtools#readme",
+  "bugs": {
+    "url": "https://github.com/CHANGE-ME/rozenite-i18n-devtools/issues"
+  }
+}

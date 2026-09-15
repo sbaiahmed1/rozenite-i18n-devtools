@@ -1,0 +1,7 @@
+node_modules
+dist
+.rozenite
+*.log
+dist-export
+.expo
+*.tgz
