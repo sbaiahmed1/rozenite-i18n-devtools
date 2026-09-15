@@ -1,7 +1,7 @@
 {
   "name": "rozenite-i18n-devtools",
   "version": "0.1.0",
-  "description": "Runtime i18n inspector for React Native DevTools \u2014 missing keys, per-locale coverage, and live locale switching.",
+  "description": "Runtime i18n inspector for React Native DevTools — missing keys, per-locale coverage, and live locale switching.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/react-native/cjs/react-native.js",
@@ -84,7 +84,7 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "https://github.com/sbaiahmed1/rozenite-i18n-devtools.git"
+    "url": "git+https://github.com/sbaiahmed1/rozenite-i18n-devtools.git"
   },
   "homepage": "https://github.com/sbaiahmed1/rozenite-i18n-devtools#readme",
   "bugs": {
