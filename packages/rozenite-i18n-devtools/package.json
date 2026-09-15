@@ -79,7 +79,7 @@
   ],
   "author": "Ahmed <ahmedclubust@gmail.com>",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "sideEffects": false,
   "repository": {
