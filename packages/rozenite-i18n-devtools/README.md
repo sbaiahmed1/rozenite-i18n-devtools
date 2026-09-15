@@ -129,6 +129,15 @@ node spikes/m0-i18next-probe.mjs                # re-run on every i18next major
 4. **Real multi-namespace apps.** Namespace handling is unit-tested only; no app with lazy-loaded
    namespaces has been run against it.
 
-See [M0-FINDINGS.md](../../M0-FINDINGS.md) for what device testing confirmed — and for the two bugs
-it caught that green unit tests could not: `saveMissing` silently writing to the resource store, and
-StrictMode's mount→cleanup→mount cycle permanently disabling capture.
+Two bugs here were found by running on a device, not by the test suite, and both are worth knowing
+if you read the adapter:
+
+- **`saveMissing` silently writes to the resource store.** `BackendConnector.saveMissing` ends with
+  an unguarded `store.addResource`, outside its `if (this.backend?.create)` check — so enabling the
+  flag mutates your translations. The adapter installs a `missingKeyHandler` to take the other
+  branch, which skips the write while the event still fires.
+- **Instrumentation used to be installed at construction and torn down per-unsubscribe**, so React
+  StrictMode's mount → cleanup → mount cycle permanently disabled capture: the listener came back,
+  `saveMissing` and the postProcessor did not. It is now refcounted across subscribers.
+
+Both are covered by regression tests that a fresh-instance unit test could not have caught.
