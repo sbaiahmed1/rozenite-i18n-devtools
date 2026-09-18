@@ -364,6 +364,9 @@ export default function I18nPanel() {
               padding: '5px 10px',
               borderTop: '1px solid var(--color-border)',
               fontSize: 11,
+              // Paired tokens: whatever theme the host resolves, muted bg + muted
+              // foreground come from the same palette and stay readable together.
+              background: 'var(--color-muted)',
               color: 'var(--color-muted-foreground)',
             }}
           >
