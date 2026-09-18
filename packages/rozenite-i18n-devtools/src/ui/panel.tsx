@@ -182,7 +182,12 @@ export default function I18nPanel() {
 
   const clearFeeds = useCallback(async () => {
     if (!rpc) return;
-    await rpc.method('clear').invoke();
+    try {
+      await rpc.method('clear').invoke();
+    } catch {
+      // Device gone mid-session: still clear the panel copy. If the device comes back
+      // with its buffer intact, device-ready reseeds and the rows return honestly.
+    }
     setMissing([]);
     setInterpolation([]);
     setSelected(null);
@@ -281,8 +286,21 @@ export default function I18nPanel() {
                 placeholder="Filter keys…"
               />
             </div>
-            {scan.kind === 'ready' && <Button onClick={() => fetchScan(true)}>Rescan</Button>}
-            <Button onClick={clearFeeds}>Clear</Button>
+            {scan.kind === 'ready' && (
+              <Button
+                onClick={() => fetchScan(true)}
+                title="Re-read the locale files and source from disk"
+              >
+                Rescan
+              </Button>
+            )}
+            <Button
+              onClick={clearFeeds}
+              disabled={missing.length === 0 && interpolation.length === 0}
+              title="Forget what the running app reported. Findings from files stay until the disk changes — fix the file and Rescan."
+            >
+              Clear runtime
+            </Button>
           </div>
 
           {/* ----------------------------------------------------- issue filters */}
