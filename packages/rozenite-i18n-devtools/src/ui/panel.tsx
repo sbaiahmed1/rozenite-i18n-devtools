@@ -367,9 +367,11 @@ export default function I18nPanel() {
               borderTop: '1px solid var(--border)',
               flex: 'none',
               fontSize: 11,
-              // Paired tokens: whatever theme the host resolves, muted bg + muted
-              // foreground come from the same palette and stay readable together.
-              background: 'var(--muted)',
+              // Dark --muted (#2b2a2f) is near-identical to the ground (#201f24), so it
+              // reads as transparent. Mixing the theme's own foreground into its background
+              // is guaranteed opaque and clearly a bar on BOTH grounds — verified against
+              // the compiled panel CSS in a browser testbed.
+              background: 'color-mix(in srgb, var(--foreground) 16%, var(--background))',
               color: 'var(--muted-foreground)',
             }}
           >
