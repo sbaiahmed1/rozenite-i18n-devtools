@@ -258,7 +258,8 @@ export default function I18nPanel() {
               alignItems: 'center',
               flexWrap: 'wrap',
               padding: 8,
-              borderBottom: '1px solid var(--color-border)',
+              flex: 'none',
+              borderBottom: '1px solid var(--border)',
             }}
           >
             <ToggleGroup
@@ -292,7 +293,8 @@ export default function I18nPanel() {
                 gap: 6,
                 alignItems: 'center',
                 padding: '6px 8px',
-                borderBottom: '1px solid var(--color-border)',
+                flex: 'none',
+                borderBottom: '1px solid var(--border)',
               }}
             >
               <ToggleGroup
@@ -362,12 +364,13 @@ export default function I18nPanel() {
               alignItems: 'center',
               flexWrap: 'wrap',
               padding: '5px 10px',
-              borderTop: '1px solid var(--color-border)',
+              borderTop: '1px solid var(--border)',
+              flex: 'none',
               fontSize: 11,
               // Paired tokens: whatever theme the host resolves, muted bg + muted
               // foreground come from the same palette and stay readable together.
-              background: 'var(--color-muted)',
-              color: 'var(--color-muted-foreground)',
+              background: 'var(--muted)',
+              color: 'var(--muted-foreground)',
             }}
           >
             <span>
@@ -398,7 +401,7 @@ export default function I18nPanel() {
                   padding: 0,
                   font: 'inherit',
                   cursor: 'pointer',
-                  color: 'var(--color-warning)',
+                  color: 'var(--warning)',
                 }}
               >
                 ⚠ {adapter.warnings.length} warning{adapter.warnings.length === 1 ? '' : 's'}
@@ -437,7 +440,7 @@ function Scorecard({
     alignItems: 'flex-start',
     gap: 0,
     padding: '6px 12px',
-    border: '1px solid var(--color-border)',
+    border: '1px solid var(--border)',
     borderRadius: 6,
     background: 'transparent',
     cursor: 'pointer',
@@ -455,25 +458,25 @@ function Scorecard({
     fontSize: 10,
     letterSpacing: '.08em',
     textTransform: 'uppercase',
-    color: 'var(--color-muted-foreground)',
+    color: 'var(--muted-foreground)',
   };
 
   const localeTone = (l: LocaleCoverage): string => {
-    if (l.notLoaded) return 'var(--color-muted-foreground)';
-    if (l.fallingBackCount === 0) return 'var(--color-success)';
-    return l.fallingBackCount > l.total / 4 ? 'var(--color-danger)' : 'var(--color-warning)';
+    if (l.notLoaded) return 'var(--muted-foreground)';
+    if (l.fallingBackCount === 0) return 'var(--success)';
+    return l.fallingBackCount > l.total / 4 ? 'var(--danger)' : 'var(--warning)';
   };
 
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: 8 }}>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: 8, flex: 'none' }}>
       <button onClick={onIssues} style={tile}>
-        <span style={{ ...value, color: counts.errors > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
+        <span style={{ ...value, color: counts.errors > 0 ? 'var(--danger)' : 'var(--success)' }}>
           {counts.errors}
         </span>
         <span style={label}>errors</span>
       </button>
       <button onClick={onIssues} style={tile}>
-        <span style={{ ...value, color: counts.warnings > 0 ? 'var(--color-warning)' : 'var(--color-success)' }}>
+        <span style={{ ...value, color: counts.warnings > 0 ? 'var(--warning)' : 'var(--success)' }}>
           {counts.warnings}
         </span>
         <span style={label}>warnings</span>
@@ -558,7 +561,7 @@ function IssuesTab({
           <code style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
             {i.title}
             {i.variable ? (
-              <span style={{ color: 'var(--color-warning)' }}>{` · {{${i.variable}}}`}</span>
+              <span style={{ color: 'var(--warning)' }}>{` · {{${i.variable}}}`}</span>
             ) : null}
           </code>
           {/* Where the evidence came from. Both badges on one row = seen live AND on
@@ -566,13 +569,13 @@ function IssuesTab({
           {i.sources.runtime && <Badge tone="info">runtime</Badge>}
           {i.sources.files && <Badge tone="neutral">files</Badge>}
           {i.fileRefs.length > 0 && (
-            <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11, flex: 'none' }}>
+            <span style={{ color: 'var(--muted-foreground)', fontSize: 11, flex: 'none' }}>
               {i.fileRefs[0]}
               {i.fileRefs.length > 1 ? ` +${i.fileRefs.length - 1}` : ''}
             </span>
           )}
           {i.locales.length > 0 && (
-            <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11, flex: 'none' }}>
+            <span style={{ color: 'var(--muted-foreground)', fontSize: 11, flex: 'none' }}>
               {i.locales.join(' ')}
             </span>
           )}
@@ -620,7 +623,7 @@ function LanguagesTab({
     fontSize: 10,
     letterSpacing: '.08em',
     textTransform: 'uppercase',
-    color: 'var(--color-muted-foreground)',
+    color: 'var(--muted-foreground)',
   };
 
   return (
@@ -635,7 +638,7 @@ function LanguagesTab({
             key={l.lng}
             style={{
               padding: '12px 14px',
-              borderBottom: '1px solid var(--color-border)',
+              borderBottom: '1px solid var(--border)',
               display: 'flex',
               flexDirection: 'column',
               gap: 8,
@@ -643,7 +646,7 @@ function LanguagesTab({
           >
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <code style={{ fontWeight: 600 }}>{l.lng}</code>
-              {l.dir === 'rtl' && <span style={{ color: 'var(--color-muted-foreground)' }}>rtl</span>}
+              {l.dir === 'rtl' && <span style={{ color: 'var(--muted-foreground)' }}>rtl</span>}
               {isRef ? (
                 // Never a percentage: every locale is measured AGAINST this one, so it is
                 // always trivially 100%.
@@ -663,7 +666,7 @@ function LanguagesTab({
                   >
                     {pct(l.translated, l.total)}%
                   </Badge>
-                  <span style={{ color: 'var(--color-muted-foreground)' }}>
+                  <span style={{ color: 'var(--muted-foreground)' }}>
                     {l.translated}/{l.total} keys
                   </span>
                 </>
@@ -685,7 +688,7 @@ function LanguagesTab({
                 style={{
                   height: 5,
                   borderRadius: 3,
-                  background: 'var(--color-muted)',
+                  background: 'var(--muted)',
                   overflow: 'hidden',
                 }}
               >
@@ -693,21 +696,21 @@ function LanguagesTab({
                   style={{
                     width: `${pct(l.translated, l.total)}%`,
                     height: '100%',
-                    background: 'var(--color-primary)',
+                    background: 'var(--primary)',
                   }}
                 />
               </div>
             )}
 
             {isRef && (
-              <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
+              <span style={{ color: 'var(--muted-foreground)', fontSize: 12 }}>
                 Defines the {l.total} keys every other locale is measured against. Keys missing
                 here too resolve nowhere and appear under Issues instead.
               </span>
             )}
 
             {l.notLoadedNamespaces.length > 0 && (
-              <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
+              <span style={{ color: 'var(--muted-foreground)', fontSize: 12 }}>
                 Not loaded yet: {l.notLoadedNamespaces.join(', ')} — excluded from the numbers
                 (unknown, not untranslated).
               </span>
@@ -724,7 +727,7 @@ function LanguagesTab({
                       key={k}
                       onClick={() => selectKey(k)}
                       style={{
-                        border: '1px solid var(--color-border)',
+                        border: '1px solid var(--border)',
                         borderRadius: 4,
                         background: 'transparent',
                         color: 'inherit',
@@ -738,7 +741,7 @@ function LanguagesTab({
                     </button>
                   ))}
                   {shown.length > GAP_DISPLAY_CAP && (
-                    <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
+                    <span style={{ color: 'var(--muted-foreground)', fontSize: 12 }}>
                       +{shown.length - GAP_DISPLAY_CAP} more — use the filter box
                     </span>
                   )}
@@ -747,7 +750,7 @@ function LanguagesTab({
             )}
 
             {!isRef && !l.notLoaded && gaps.length > 0 && shown.length === 0 && (
-              <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
+              <span style={{ color: 'var(--muted-foreground)', fontSize: 12 }}>
                 No gap keys match that filter.
               </span>
             )}
@@ -788,7 +791,7 @@ function KeyDetailPane({
       style={{
         width: 340,
         flex: 'none',
-        borderLeft: '1px solid var(--color-border)',
+        borderLeft: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
@@ -801,7 +804,7 @@ function KeyDetailPane({
           alignItems: 'flex-start',
           gap: 8,
           padding: '10px 12px',
-          borderBottom: '1px solid var(--color-border)',
+          borderBottom: '1px solid var(--border)',
         }}
       >
         <code style={{ flex: 1, minWidth: 0, wordBreak: 'break-all', fontSize: 12 }}>
@@ -819,11 +822,11 @@ function KeyDetailPane({
               {issue.sources.runtime && <Badge tone="info">runtime</Badge>}
               {issue.sources.files && <Badge tone="neutral">files</Badge>}
               {issue.sources.runtime && issue.sources.files && (
-                <span style={{ color: 'var(--color-muted-foreground)' }}>— seen live and on disk</span>
+                <span style={{ color: 'var(--muted-foreground)' }}>— seen live and on disk</span>
               )}
             </span>
           </Row>
-          {issue.note && <div style={{ color: 'var(--color-muted-foreground)' }}>{issue.note}</div>}
+          {issue.note && <div style={{ color: 'var(--muted-foreground)' }}>{issue.note}</div>}
           {issue.fileRefs.length > 0 && (
             <Row label="Used at">
               <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -847,7 +850,7 @@ function KeyDetailPane({
       )}
 
       {!detail && !error && (
-        <div style={{ padding: 12, fontSize: 12, color: 'var(--color-muted-foreground)' }}>Loading…</div>
+        <div style={{ padding: 12, fontSize: 12, color: 'var(--muted-foreground)' }}>Loading…</div>
       )}
 
       {detail && (
@@ -863,7 +866,7 @@ function KeyDetailPane({
                   {detail.resolvedFrom}
                 </Badge>{' '}
                 {detail.resolvedFrom !== activeLng && (
-                  <span style={{ color: 'var(--color-muted-foreground)' }}>
+                  <span style={{ color: 'var(--muted-foreground)' }}>
                     — falls back from <code>{activeLng}</code>
                   </span>
                 )}
@@ -889,7 +892,7 @@ function KeyDetailPane({
                 fontSize: 10,
                 letterSpacing: '.09em',
                 textTransform: 'uppercase',
-                color: 'var(--color-muted-foreground)',
+                color: 'var(--muted-foreground)',
                 marginBottom: 6,
               }}
             >
@@ -906,12 +909,12 @@ function KeyDetailPane({
                     padding: '6px 8px',
                     borderRadius: 4,
                     background:
-                      v.lng === detail.resolvedFrom ? 'var(--color-sidebar-accent)' : 'transparent',
+                      v.lng === detail.resolvedFrom ? 'var(--sidebar-accent)' : 'transparent',
                   }}
                 >
                   <Badge tone={v.value === null ? 'danger' : 'neutral'}>{v.lng}</Badge>
                   {v.value === null ? (
-                    <span style={{ color: 'var(--color-muted-foreground)', fontStyle: 'italic' }}>
+                    <span style={{ color: 'var(--muted-foreground)', fontStyle: 'italic' }}>
                       missing
                     </span>
                   ) : (
@@ -935,7 +938,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
           fontSize: 10,
           letterSpacing: '.09em',
           textTransform: 'uppercase',
-          color: 'var(--color-muted-foreground)',
+          color: 'var(--muted-foreground)',
           marginBottom: 4,
         }}
       >
