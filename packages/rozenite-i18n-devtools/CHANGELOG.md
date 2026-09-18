@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0
+
+### Performance
+- Store-change snapshot pushes are now coalesced (default 400ms, `snapshotDebounceMs` to tune).
+  Previously every i18next `added`/`removed`/`languageChanged` event triggered a full
+  O(locales × keys) snapshot straight over CDP — and `added` fires once per namespace per
+  language while a backend loads. Invisible on a small demo, crippling on a real app.
+
+### New: static scanner
+- `npx rozenite-i18n-scan --locales <dir> [--src <dir>] [--ref en] [--json] [--strict]`
+  Checks the files on disk with zero runtime cost: keys missing per locale vs the reference,
+  stale extra keys, `{{variable}}` mismatches between translations, `t('...')` keys used in
+  code but absent from the reference, and hardcoded JSX text that never goes through i18n
+  (heuristic, reported as warnings). Exits non-zero on findings, so it slots into CI.
+
 ## 0.1.0
 
 First release. Runtime i18n inspector for React Native DevTools via Rozenite.

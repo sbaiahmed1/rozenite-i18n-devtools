@@ -56,6 +56,34 @@ export default function App() {
 }
 ```
 
+## Static checks — no app running
+
+The runtime panel only sees what actually executes. The bundled scanner is the other half: it
+reads the files and costs the app nothing.
+
+```bash
+npx rozenite-i18n-scan --locales src/locales --src src
+```
+
+| Check | Severity |
+|---|---|
+| Keys missing per locale vs the reference (`--ref en`) | error |
+| `{{variable}}` mismatches between reference and translation | error |
+| `t('…')` keys used in code but absent from the reference JSON | error |
+| Stale keys not in the reference | warning |
+| Hardcoded JSX text that never goes through i18n (heuristic) | warning (`--strict` promotes) |
+
+Both `locales/en.json` and `locales/en/<ns>.json` layouts are recognised. `--json` for machines,
+non-zero exit on errors for CI. Dynamic keys — ``t(`x.${'{'}y}`)`` — are counted but cannot be
+verified statically; that is exactly what the runtime panel is for, and vice versa: the scanner
+covers screens nobody has opened.
+
+## Performance
+
+Snapshot pushes are coalesced (400ms; `snapshotDebounceMs` on the hook to tune). If the panel
+still feels heavy on a very large app, the next knob is `trackInterpolation: false` on the
+adapter, which removes the per-`t()` postProcessor entirely.
+
 ## How it avoids breaking your app
 
 A devtool that corrupts dev builds is worse than no devtool. Every hook here was chosen for

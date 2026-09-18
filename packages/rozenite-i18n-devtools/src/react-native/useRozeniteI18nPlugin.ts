@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createRozeniteRpc, useRozeniteDevToolsClient } from '@rozenite/plugin-bridge';
+import { createTrailingCoalescer } from './coalesce';
 import type { I18nEventMap, I18nMethods } from '../shared/messaging';
 import type { I18nextAdapter } from './adapters/i18next';
 import { createMissingStore } from './missing-store';
@@ -11,12 +12,25 @@ export type UseRozeniteI18nPluginOptions = {
   adapter: I18nextAdapter | null | undefined;
   /** Coalescing window for feed pushes. Default 250ms. */
   flushMs?: number;
+  /**
+   * Coalescing window for store-change snapshot pushes. Default 400ms.
+   *
+   * i18next's `added` event fires once per namespace per language while a backend loads
+   * bundles, and each snapshot flattens every locale × namespace before crossing CDP.
+   * Pushing one per event made the panel barely usable on a real app; one per window is
+   * indistinguishable in the UI.
+   */
+  snapshotDebounceMs?: number;
 };
 
 /**
  * Mount in your app root. No-op in production — see `react-native.ts`.
  */
-export const useRozeniteI18nPlugin = ({ adapter, flushMs }: UseRozeniteI18nPluginOptions) => {
+export const useRozeniteI18nPlugin = ({
+  adapter,
+  flushMs,
+  snapshotDebounceMs = 400,
+}: UseRozeniteI18nPluginOptions) => {
   const client = useRozeniteDevToolsClient<I18nEventMap>({ pluginId: PLUGIN_ID });
   // Kept in a ref so re-renders do not tear down the subscription and lose buffered rows.
   const adapterRef = useRef(adapter);
@@ -74,16 +88,16 @@ export const useRozeniteI18nPlugin = ({ adapter, flushMs }: UseRozeniteI18nPlugi
       })),
     ];
 
+    // One snapshot per window, not per event — `getSnapshot` is O(locales × keys) and
+    // `added` bursts during bundle loading. See coalesce.ts for the incident behind this.
+    const snapshotPush = createTrailingCoalescer(() => {
+      client.send('snapshot', { type: 'snapshot', snapshot: adapterRef.current!.getSnapshot() });
+    }, snapshotDebounceMs);
+
     const unsubscribeAdapter = adapter.subscribe({
       onMissingKey: (o) => store.addMissing(o),
       onInterpolationMiss: (o) => store.addInterpolation(o),
-      onChanged: () => {
-        try {
-          client.send('snapshot', { type: 'snapshot', snapshot: adapterRef.current!.getSnapshot() });
-        } catch {
-          /* a snapshot failure must never take down the app */
-        }
-      },
+      onChanged: () => snapshotPush.call(),
     });
 
     // Announce LAST, once every handler is registered. The panel is recreated on every app
@@ -94,11 +108,12 @@ export const useRozeniteI18nPlugin = ({ adapter, flushMs }: UseRozeniteI18nPlugi
     return () => {
       store.flushNow();
       store.dispose();
+      snapshotPush.dispose();
       unsubscribeAdapter();
       subs.forEach((s) => s.remove());
       rpc.close();
     };
-  }, [client, adapter, flushMs]);
+  }, [client, adapter, flushMs, snapshotDebounceMs]);
 
   return client;
 };
