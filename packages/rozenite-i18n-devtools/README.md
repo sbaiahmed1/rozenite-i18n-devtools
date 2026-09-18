@@ -1,53 +1,63 @@
 # rozenite-i18n-devtools
 
-Runtime i18n inspector for React Native DevTools, via [Rozenite](https://rozenite.dev).
+Runtime + static i18n inspector for React Native DevTools, via [Rozenite](https://rozenite.dev).
+i18next first; the adapter interface is library-neutral.
 
-**Status: 0.2.0.** 67 tests, clean typecheck. The 0.1.0 loop was device-verified end to end in
-React Native DevTools against an Expo SDK 57 / RN 0.86.3 iOS simulator; 0.2.0 redesigns the panel
-on the same protocol. Production stripping is verified against a real `expo export` bundle — see
-*Verified* and *Not yet proven* below.
+**Status: 0.2.0 — device-verified end to end** on an Expo SDK 57 / RN 0.86.3 iOS simulator.
+67 tests, clean typecheck, production stripping verified against a real `expo export` bundle.
+See *Verified* and *Not yet proven* at the bottom — this README does not claim more than has
+been run.
 
 ## The panel
 
-A scorecard that is always visible — error count, warning count, one tile per locale — over two
-tabs matching the two questions you bring to a devtool: **Issues** (what's broken: one merged,
-filterable list of every finding, runtime and static, deduplicated by key) and **Languages** (how
-translated each locale is: coverage bars, the keys that silently fall back, switch locale). A
-one-line status footer replaces banners. The tiles navigate: errors jump to Issues, a locale
-jumps to Languages.
+One screen answers the two questions you actually bring to a devtool:
 
-## What it does
+- **Scorecard** (always visible) — error count, warning count, one tile per locale with its
+  coverage. The tiles navigate: errors/warnings jump to Issues, a locale jumps to Languages.
+- **Issues** — *what's broken.* One merged list of every finding, runtime and static,
+  deduplicated by key, with filter chips (`Missing · Variables · Hardcoded · Stale`). Each row
+  carries evidence badges: `runtime` (the running app hit it), `files` (the scan found it on
+  disk), or both — both at once is the highest-confidence finding the panel can make.
+- **Languages** — *how translated is each locale.* Per-locale blocks with a coverage bar, the
+  keys that silently fall back to the reference, and a locale switcher.
+- **Status footer** — adapter, active/reference locale, whether file checks are on, and any
+  setup warnings. One line; no banners.
 
-Three things, and the first one is the reason it exists.
+Clicking any row opens a detail pane: per-locale values, which locale the resolution chain
+actually lands on, variables, and where the key is used in code.
 
-### 1. Coverage — the keys that fall back silently
+## What it catches
 
-A key missing in German but present in English **is not "missing" to i18next**. It resolves via
-`fallbackLng`, renders English, and emits no event. Nothing reports it. It is also the single most
-common i18n bug: *"why is this screen in English?"*
+| Finding | Severity | Detected by |
+|---|---|---|
+| Key used in code that resolves in **no** locale | error | runtime + files |
+| Dynamic key (``t(`x.${y}`)``) that resolves nowhere | error | runtime only — the scan cannot see it |
+| Key on a screen nobody opened, absent from the JSONs | error | files only — runtime never saw it |
+| `{{variable}}` never supplied at render | error | runtime |
+| `{{variable}}` renamed or dropped in a translation | error | files |
+| Locale JSON that does not parse | error | files |
+| Hardcoded JSX text that never goes through i18n (heuristic) | warning | files |
+| Stale key present in a locale but not in the reference | warning | files |
+| Keys that silently fall back to the reference locale | Languages tab | runtime + files |
 
-The Languages tab counts exactly those keys, per locale, against a reference locale — they are
-deliberately kept out of the Issues list, because a silent fallback is translation debt, not a
-code bug, and listing it there would repeat every gap once per locale.
+The two detectors are complements, not alternatives: the scan covers screens nobody has
+opened, the runtime covers dynamic keys the scan cannot verify.
 
-### 2. Missing keys — the ones that resolve nowhere
+Three findings deserve their own line, because nothing else reports them:
 
-Live and deduplicated in the Issues list, with the set of locales each key was missed in. These
-are typos and unextracted strings. When the file scan (below) sees the same key, the row carries
-both a `runtime` and a `files` badge — one problem, corroborated by two detectors.
+1. **Silent fallbacks are not "missing" to i18next.** A key absent in German but present in
+   English resolves, renders English, and emits no event. It is the most common i18n bug
+   (*"why is this screen in English?"*) and it is invisible to `debug: true`. The Languages
+   tab counts exactly these — deliberately kept out of Issues, because they are translation
+   debt, not code bugs, and would repeat once per locale.
+2. **Interpolation misses are invisible even with `debug: true`.** The warning sits behind
+   `else if (skipOnVariables)`, and `skipOnVariables` defaults to `true`, so it never fires.
+3. **Missing keys ARE logged by `debug: true`** (`i18next.js:680`). On that finding this panel
+   is aggregation, not revelation: dedup, locale sets, persistence, search. If console output
+   is enough for you, use that.
 
-Rows appear **as screens render** — navigating to a screen checks every key it requests, with no
-interaction. Only keys resolved behind a tap or a condition wait for that to happen.
-
-**Be aware:** i18next's own `debug: true` already logs every one of these to the console
-(`i18next.js:680`). This panel is not revelation, it is aggregation — dedup, counts, persistence
-across reloads, search, and a queryable surface. If console output is enough for you, use that.
-
-### 3. Interpolation misses — genuinely invisible today
-
-`t('greet')` where the value is `"Hi {{name}}"` and no `name` was passed. i18next does **not** log
-these even with `debug: true`: the warning sits behind `else if (skipOnVariables)`, and
-`skipOnVariables` defaults to `true`, so it never fires.
+Rows appear **as screens render** — navigating checks every key the screen requests, no
+tapping required. Only keys behind a tap or a condition wait for that to happen.
 
 ## Install
 
@@ -68,14 +78,8 @@ export default function App() {
 }
 ```
 
-## File checks — static, no app interaction
-
-The runtime instrumentation only sees what actually executes. The file scan is the other half:
-the Metro dev server reads your locale JSONs and source from disk, and the findings land in the
-same Issues list (tagged `files`) and in each locale's gap list on the Languages tab — nothing
-runs on the device for this.
-
-One wrapper in `metro.config.js` (files live on your machine, so only Metro can read them):
+That enables the runtime side. For the file checks, add one wrapper in `metro.config.js`
+(your locale files live on your machine, so only Metro can read them):
 
 ```js
 const { withRozeniteI18nScan } = require('rozenite-i18n-devtools/metro');
@@ -87,60 +91,53 @@ module.exports = withRozeniteI18nScan(config, {
 });
 ```
 
-It composes with `withRozenite` in either order. The scan reports:
-
-| Check | Severity |
-|---|---|
-| Keys missing per locale vs the reference | error |
-| `{{variable}}` mismatches between reference and translation | error |
-| `t('…')` keys used in code but absent from the reference JSON | error |
-| Stale keys not in the reference | warning |
-| Hardcoded JSX text that never goes through i18n (heuristic) | warning |
-
-Dynamic keys — ``t(`x.${'{'}y}`)`` — are counted but cannot be verified statically; that is exactly
-what the runtime side is for, and vice versa: the file scan covers screens nobody has opened.
-Without the wrapper the footer says so and the runtime findings work as before.
-
-## Performance
-
-Snapshot pushes are coalesced (400ms; `snapshotDebounceMs` on the hook to tune). If the panel
-still feels heavy on a very large app, the next knob is `trackInterpolation: false` on the
-adapter, which removes the per-`t()` postProcessor entirely.
+It composes with `withRozenite` in either order. Without it the footer says file checks are
+off and the runtime findings work as before.
 
 ## How it avoids breaking your app
 
-A devtool that corrupts dev builds is worse than no devtool. Every hook here was chosen for
+A devtool that corrupts dev builds is worse than no devtool. Every hook was chosen for
 non-interference, and each choice is covered by a test.
 
 | We do NOT | Because |
 |---|---|
 | assign `missingKeyHandler` | It is the `if` to `backendConnector.saveMissing`'s `else if`. Setting it **silently disables your app's own missing-key reporting.** We subscribe to the `missingKey` *event* instead, which is emitted unconditionally after both branches. |
 | install `missingInterpolationHandler` | It displaces the `skipOnVariables` branch, whose `continue` skips the escape step. Even returning the identical `match[0]` renders `{{a<b}}` as `{{a&lt;b}}`. We use a postProcessor that returns the value **unchanged** and scans it instead. |
-| enable `saveMissing` when a backend can write | That would POST every missing key to your translation service. With `missingKeyCapture: 'auto'` (default) we detect `backend.create` and refuse, with a warning in the panel. |
+| enable `saveMissing` when a backend can write | That would POST every missing key to your translation service. We detect `backend.create` and refuse, with a warning in the footer. |
 | call `t()` for panel reads | `t()` re-enters the code that emits `missingKey` and calls `saveMissing` — a panel probing keys would fabricate rows in its own feed and POST junk. We walk the resource store directly. |
 
 Everything we touch is restored on unmount.
 
+## Performance
+
+Snapshot pushes are coalesced (400ms; `snapshotDebounceMs` on the hook). Feed flushes are
+deduplicated and batched on the device (250ms; `flushMs`). If the panel still feels heavy on
+a very large app, the next knob is `trackInterpolation: false` on the adapter, which removes
+the per-`t()` postProcessor entirely.
+
 ## Known limitations
 
-- **If your app defines its own `missingInterpolationHandler`**, it replaces the token before we can
-  see it, so interpolation misses are under-reported. The panel says so rather than staying quiet.
+- **If your app defines its own `missingInterpolationHandler`**, it replaces the token before
+  we can see it, so interpolation misses are under-reported. The panel says so rather than
+  staying quiet.
 - **`saveMissingTo` defaults to `'fallback'`**, so i18next reports misses against the fallback
   locale. We capture and display the locale your app was *actually* showing.
+- **The hardcoded-text check is a heuristic** (JSX text nodes). Expect false positives; they
+  are warnings, not errors, for exactly that reason.
 - **Live translation editing is not implemented.** Rozenite
-  [issue #407](https://github.com/callstackincubator/rozenite/issues/407) silently drops non-BMP
-  characters host→device, and PR #408 was closed unmerged. The read path is unaffected; the locale
-  switcher sends ASCII only.
-- **i18next only.** `i18n-js` has no event emitter and no `saveMissing`, so the feed cannot be built
-  on it. The adapter interface is library-neutral so another can be added.
+  [issue #407](https://github.com/callstackincubator/rozenite/issues/407) silently drops
+  non-BMP characters host→device, and PR #408 was closed unmerged. The read path is
+  unaffected; the locale switcher sends ASCII only.
+- **i18next only, today.** `i18n-js` has no event emitter and no `saveMissing`, so the feed
+  cannot be built on it. The adapter interface is library-neutral so another can be added.
 
 ## Compared to what you already have
 
-- **`debug: true`** — logs missing keys, but no dedup, no counts, gone on reload, and silent about
-  interpolation.
-- **[i18n Ally](https://github.com/lokalise/i18n-ally)** (VS Code) — better than this at everything
-  static: it reads your locale files from disk and lets you edit them. It cannot see runtime state:
-  which locale is active, what actually got requested, what fell back.
+- **`debug: true`** — logs missing keys, but no dedup, no locale sets, gone on reload, and
+  silent about both fallbacks and interpolation.
+- **[i18n Ally](https://github.com/lokalise/i18n-ally)** (VS Code) — better than this at
+  everything static: it reads your locale files and lets you edit them. It cannot see runtime
+  state: which locale is active, what actually got requested, what fell back.
 
 Use both. They do not overlap.
 
@@ -154,42 +151,37 @@ pnpm --filter rozenite-i18n-devtools build      # stop Metro first — see below
 node spikes/m0-i18next-probe.mjs                # re-run on every i18next major
 ```
 
-> **Do not run `rozenite build` while Metro is running.** The build empties `dist/` first, Metro has
-> the `exports` path cached, and the app dies with *"main has not been registered"* mid-build.
+> **Do not run `rozenite build` while Metro is running.** The build empties `dist/` first,
+> Metro has the `exports` path cached, and the app dies with *"main has not been registered"*
+> mid-build.
 
 ## Verified
 
-- **Production stripping.** `expo export` of the example app was grepped for every string unique to
-  the real adapter (`__rozeniteI18nDevtoolsPristine`, the warning texts, the postProcessor name).
-  All absent; only the no-op stub ships. This is the one that matters — a leak would mean
-  `saveMissing` writing to a production resource store.
-- **The full 0.1.0 panel loop** on an iOS simulator: coverage, both feeds, locale switching,
-  detail pane. The 0.2.0 redesign reuses that protocol unchanged; its merge layer is unit-tested.
-- **No store pollution.** Covered by a test asserting the reference locale's key count is unchanged
-  after a miss.
-- **Namespaces**, including a namespace that has not loaded yet being excluded from coverage rather
-  than counted as untranslated.
+- **Production stripping.** `expo export` of the example app was grepped for every string
+  unique to the real adapter (`__rozeniteI18nDevtoolsPristine`, the warning texts, the
+  postProcessor name). All absent; only the no-op stub ships. This is the one that matters —
+  a leak would mean `saveMissing` writing to a production resource store.
+- **The full panel loop** on an iOS simulator: scorecard, the merged Issues list with both
+  evidence sources, Languages, locale switching, detail panes, clear/rescan, the footer.
+- **No store pollution.** `BackendConnector.saveMissing` ends with an unguarded
+  `store.addResource` outside its `if (this.backend?.create)` check — enabling the flag
+  mutates your translations. The adapter takes the other branch; a test asserts the reference
+  locale's key count is unchanged after a miss.
+- **StrictMode / Fast Refresh.** Instrumentation is refcounted across subscribers and
+  restores pristine state on the last unsubscribe; mount → cleanup → mount cycles do not
+  disable capture. Found on a device, not by the suite — then locked in by regression tests.
+- **Namespaces**, including a lazily-loaded namespace being excluded from coverage as
+  "unknown" rather than counted as untranslated.
 
 ## Not yet proven
 
-1. **Android — never run.** Everything so far is the iOS simulator. Nothing here is
+1. **Android — never run.** Everything above is the iOS simulator. Nothing here is
    platform-specific, but that is an assumption, not a result.
-2. **Issue #407.** The `echo` RPC exists to probe it and has never been fired. Relevant only to
-   host→device text, which the MVP does not send.
-3. **postProcessor cost.** It runs on every `t()` call — a substring check, and a regex only when
-   `{{` is present. Never measured on a list screen.
-4. **Real multi-namespace apps.** Namespace handling is unit-tested only; no app with lazy-loaded
-   namespaces has been run against it.
+2. **postProcessor cost.** It runs on every `t()` call — a substring check, and a regex only
+   when `{{` is present. Never measured on a heavy list screen.
+3. **Real multi-namespace apps.** Namespace handling is unit-tested and demo-verified only;
+   no production app with lazy-loaded namespaces has been run against it.
 
-Two bugs here were found by running on a device, not by the test suite, and both are worth knowing
-if you read the adapter:
+## License
 
-- **`saveMissing` silently writes to the resource store.** `BackendConnector.saveMissing` ends with
-  an unguarded `store.addResource`, outside its `if (this.backend?.create)` check — so enabling the
-  flag mutates your translations. The adapter installs a `missingKeyHandler` to take the other
-  branch, which skips the write while the event still fires.
-- **Instrumentation used to be installed at construction and torn down per-unsubscribe**, so React
-  StrictMode's mount → cleanup → mount cycle permanently disabled capture: the listener came back,
-  `saveMissing` and the postProcessor did not. It is now refcounted across subscribers.
-
-Both are covered by regression tests that a fresh-instance unit test could not have caught.
+MIT
