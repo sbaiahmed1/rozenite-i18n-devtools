@@ -42,7 +42,7 @@ type ScanState =
   | { kind: 'unavailable' } // route absent: the metro wrapper is not installed
   | { kind: 'ready'; report: ScanPayload };
 
-type Selection = { key: string; ns?: string; issue?: Issue };
+type Selection = { key?: string; ns?: string; issue?: Issue };
 
 const pct = (n: number, d: number) => (d === 0 ? 100 : Math.round((n / d) * 100));
 
@@ -137,7 +137,9 @@ export default function I18nPanel() {
   );
 
   useEffect(() => {
-    if (!rpc || !selected) {
+    // Key-less selections (hardcoded text, parse errors) have nothing to look up in the
+    // resource store — the pane shows their evidence only.
+    if (!rpc || !selected || !selected.key) {
       setDetail(null);
       setDetailError(null);
       return;
@@ -239,7 +241,7 @@ export default function I18nPanel() {
   const feedDisabled = !adapter.capabilities.missingKeyFeed;
 
   const openIssue = (issue: Issue) => {
-    if (issue.key) setSelected({ key: issue.key, ns: issue.ns, issue });
+    setSelected({ key: issue.key, ns: issue.ns, issue });
   };
 
   return (
@@ -574,7 +576,7 @@ function IssuesTab({
             display: 'flex',
             gap: 8,
             alignItems: 'baseline',
-            cursor: i.key ? 'pointer' : 'default',
+            cursor: 'pointer',
           }}
           title={i.note}
         >
@@ -828,8 +830,8 @@ function KeyDetailPane({
           borderBottom: '1px solid var(--border)',
         }}
       >
-        <code style={{ flex: 1, minWidth: 0, wordBreak: 'break-all', fontSize: 12 }}>
-          {selection.key}
+        <code style={{ flex: 1, minWidth: 0, wordBreak: 'break-word', fontSize: 12 }}>
+          {selection.key ?? selection.issue?.title ?? ''}
         </code>
         <Button onClick={onClose} aria-label="Close details">
           ✕
@@ -870,7 +872,7 @@ function KeyDetailPane({
         </div>
       )}
 
-      {!detail && !error && (
+      {!detail && !error && selection.key && (
         <div style={{ padding: 12, fontSize: 12, color: 'var(--muted-foreground)' }}>Loading…</div>
       )}
 

@@ -184,7 +184,9 @@ export const mergeIssues = (
       sources: { runtime: false, files: true },
       locales: [],
       fileRefs: [`${h.file}:${h.line}`],
-      note: 'JSX text that never goes through i18n (heuristic).',
+      note:
+        'JSX text that never goes through i18n (heuristic). Extract it to a key and render ' +
+        'it with t(), or ignore it if this text is intentionally untranslated.',
     });
   }
 
