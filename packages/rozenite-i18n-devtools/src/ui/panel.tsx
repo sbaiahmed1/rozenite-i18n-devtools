@@ -240,7 +240,7 @@ export default function I18nPanel() {
   return (
     <PluginShell>
       <PluginShell.Body>
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontSize: 13 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden', fontSize: 13 }}>
           {/* ------------------------------------------------------- scorecard */}
           <Scorecard
             counts={counts}
@@ -544,6 +544,7 @@ function IssuesTab({
   return (
     <VirtualizedList
       ariaLabel="Issues"
+      style={{ height: '100%' }}
       data={issues}
       onItemClick={(i) => onSelect(i)}
       getItemKey={(i) => i.id}
