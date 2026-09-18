@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRozeniteRpc, useRozeniteDevToolsClient } from '@rozenite/plugin-bridge';
 import {
@@ -18,9 +19,18 @@ import type {
   KeyDetail,
   MissingKeyRecord,
 } from '../shared/types';
+// Types only — scan-core is Node code; the values live behind the Metro HTTP route.
+import type { ScanReport } from '../node/scan-core';
 
 const PLUGIN_ID = 'rozenite-i18n-devtools';
-type Tab = 'coverage' | 'missing' | 'interpolation';
+const SCAN_ROUTE = '/_rozenite-i18n/scan.json'; // keep in sync with src/node/with-i18n-scan.ts
+type Tab = 'coverage' | 'missing' | 'interpolation' | 'files';
+
+type ScanPayload = ScanReport & { errors: number; warnings: number; scannedAtMs: number };
+type ScanState =
+  | { kind: 'loading' }
+  | { kind: 'unavailable' } // route absent: the metro wrapper is not installed
+  | { kind: 'ready'; report: ScanPayload };
 
 const pct = (n: number, d: number) => (d === 0 ? 100 : Math.round((n / d) * 100));
 
@@ -34,6 +44,7 @@ export default function I18nPanel() {
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<{ key: string; ns?: string } | null>(null);
+  const [scan, setScan] = useState<ScanState>({ kind: 'loading' });
   const [detail, setDetail] = useState<KeyDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -129,6 +140,27 @@ export default function I18nPanel() {
       cancelled = true;
     };
   }, [rpc, selected]);
+
+  const fetchScan = useCallback(async (fresh = false) => {
+    setScan({ kind: 'loading' });
+    try {
+      const res = await fetch(fresh ? `${SCAN_ROUTE}?fresh=1` : SCAN_ROUTE);
+      const type = res.headers.get('content-type') ?? '';
+      // Expo's dev server answers unknown paths with the SPA's HTML and a 200, so a
+      // status check alone reports "installed" when the wrapper is missing.
+      if (!res.ok || !type.includes('application/json')) {
+        setScan({ kind: 'unavailable' });
+        return;
+      }
+      setScan({ kind: 'ready', report: (await res.json()) as ScanPayload });
+    } catch {
+      setScan({ kind: 'unavailable' });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchScan();
+  }, [fetchScan]);
 
   const clearFeeds = useCallback(async () => {
     if (!rpc) return;
@@ -274,6 +306,9 @@ export default function I18nPanel() {
                 <ToggleGroup.Item value="interpolation">
                   {`Interpolation (${interpolation.length})`}
                 </ToggleGroup.Item>
+                <ToggleGroup.Item value="files">
+                  {scan.kind === 'ready' ? `Files (${scan.report.errors})` : 'Files'}
+                </ToggleGroup.Item>
               </ToggleGroup>
               <div style={{ flex: 1, minWidth: 120 }}>
                 <QueryField
@@ -298,6 +333,13 @@ export default function I18nPanel() {
 
             <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+              {tab === 'files' && (
+                <FilesTab
+                  scan={scan}
+                  onRescan={() => fetchScan(true)}
+                  onSelect={(key, ns) => setSelected({ key, ns })}
+                />
+              )}
               {tab === 'coverage' && (
                 <CoverageTab
                   snapshot={snapshot}
@@ -657,6 +699,164 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
         {label}
       </div>
       {children}
+    </div>
+  );
+}
+
+/**
+ * Results of the static scan served by the Metro wrapper — the checks that need the files
+ * on disk rather than the running app: per-locale diffs of the locale JSONs, {{variable}}
+ * mismatches, t() keys absent from the reference, and hardcoded JSX text.
+ */
+function FilesTab({
+  scan,
+  onRescan,
+  onSelect,
+}: {
+  scan: ScanState;
+  onRescan: () => void;
+  onSelect: (key: string, ns?: string) => void;
+}) {
+  if (scan.kind === 'loading') {
+    return <EmptyState title="Scanning…" description="Reading the locale files via Metro." />;
+  }
+  if (scan.kind === 'unavailable') {
+    return (
+      <EmptyState
+        title="Static scanning is not wired up"
+        description={
+          'Add the Metro wrapper so the dev server can read your locale files:  ' +
+          "const { withRozeniteI18nScan } = require('rozenite-i18n-devtools/metro');  " +
+          "module.exports = withRozeniteI18nScan(config, { locales: './src/locales', src: './src' });  " +
+          'Then restart Metro. The runtime tabs work without it.'
+        }
+      />
+    );
+  }
+
+  const r = scan.report;
+  const sectionTitle: React.CSSProperties = {
+    fontSize: 10,
+    letterSpacing: '.09em',
+    textTransform: 'uppercase',
+    color: 'var(--color-muted-foreground)',
+    margin: '14px 0 6px',
+  };
+  const row: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'baseline', padding: '3px 0' };
+  const clean = r.errors === 0 && r.warnings === 0 && r.parseErrors.length === 0;
+
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', padding: '10px 12px', fontSize: 12 }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <span style={{ color: 'var(--color-muted-foreground)' }}>
+          {r.localesDir} · ref <code>{r.ref}</code> · {r.locales.join(', ')}
+        </span>
+        <Button onClick={onRescan}>Rescan</Button>
+      </div>
+
+      {r.parseErrors.map((e, i) => (
+        <div key={i} style={{ marginTop: 8 }}>
+          <Alert tone="danger">
+            <Alert.Description>{e}</Alert.Description>
+          </Alert>
+        </div>
+      ))}
+
+      {clean && (
+        <div style={{ marginTop: 10 }}>
+          <Alert tone="success">
+            <Alert.Description>
+              Locale files agree with {r.ref}
+              {r.source ? ', and every literal key in the source resolves.' : '.'}
+            </Alert.Description>
+          </Alert>
+        </div>
+      )}
+
+      {Object.entries(r.missing).map(([lng, keys]) => (
+        <div key={lng}>
+          <div style={sectionTitle}>
+            missing in {lng} — {keys.length}
+          </div>
+          {keys.map((k) => (
+            <div key={k} style={{ ...row, cursor: 'pointer' }} onClick={() => onSelect(k)}>
+              <Badge tone="danger">{lng}</Badge>
+              <code>{k}</code>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {r.varMismatch.length > 0 && (
+        <div>
+          <div style={sectionTitle}>variable mismatches — {r.varMismatch.length}</div>
+          {r.varMismatch.map((v, i) => (
+            <div key={i} style={{ ...row, cursor: 'pointer' }} onClick={() => onSelect(v.key)}>
+              <Badge tone="danger">{v.lng}</Badge>
+              <code>{v.key}</code>
+              <span style={{ color: 'var(--color-muted-foreground)' }}>
+                {r.ref}: {v.refVars.length ? v.refVars.map((x) => `{{${x}}}`).join(' ') : '—'}
+                {'  vs  '}
+                {v.vars.length ? v.vars.map((x) => `{{${x}}}`).join(' ') : '—'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {r.source && r.source.missingInCode.length > 0 && (
+        <div>
+          <div style={sectionTitle}>
+            keys used in code, absent from {r.ref} — {r.source.missingInCode.length}
+          </div>
+          {r.source.missingInCode.map((m, i) => (
+            <div key={i} style={row}>
+              <code style={{ flex: 'none' }}>{m.key}</code>
+              <span style={{ color: 'var(--color-muted-foreground)' }}>
+                {m.file}:{m.line}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {Object.entries(r.extra).map(([lng, keys]) => (
+        <div key={lng}>
+          <div style={sectionTitle}>
+            stale in {lng} (not in {r.ref}) — {keys.length}
+          </div>
+          {keys.map((k) => (
+            <div key={k} style={row}>
+              <Badge tone="warning">{lng}</Badge>
+              <code>{k}</code>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {r.source && r.source.hardcoded.length > 0 && (
+        <div>
+          <div style={sectionTitle}>
+            hardcoded JSX text (heuristic) — {r.source.hardcoded.length}
+          </div>
+          {r.source.hardcoded.slice(0, 100).map((h, i) => (
+            <div key={i} style={row}>
+              <Badge tone="warning">text</Badge>
+              <span style={{ minWidth: 0, wordBreak: 'break-word' }}>&ldquo;{h.text}&rdquo;</span>
+              <span style={{ color: 'var(--color-muted-foreground)', flex: 'none' }}>
+                {h.file}:{h.line}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {r.source && r.source.dynamicKeys > 0 && (
+        <div style={{ marginTop: 12, color: 'var(--color-muted-foreground)' }}>
+          {r.source.dynamicKeys} dynamic t() call{r.source.dynamicKeys === 1 ? '' : 's'} the scanner
+          cannot verify — those are what the runtime tabs are for.
+        </div>
+      )}
     </div>
   );
 }

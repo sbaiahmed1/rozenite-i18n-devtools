@@ -2,7 +2,6 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-// The bin is a plain module when imported; main() only runs when executed directly.
 import {
   discoverLocales,
   diffLocales,
@@ -11,7 +10,7 @@ import {
   findHardcodedText,
   runScan,
   countProblems,
-} from '../../../bin/i18n-scan.mjs';
+} from '../../node/scan-core';
 
 const roots: string[] = [];
 const tmp = () => {
@@ -130,15 +129,10 @@ describe('end to end', () => {
     const report = runScan({ localesDir: loc, srcDir: src, ref: 'en' });
     expect(report.missing).toEqual({}); // de has every en key
     expect(report.varMismatch).toHaveLength(1); // greet lost {{name}}
-    // the bin ships as untyped .mjs, so give its source block a shape here
-    const source = report.source as unknown as {
-      missingInCode: Array<{ key: string }>;
-      hardcoded: Array<{ text: string }>;
-    };
-    expect(source.missingInCode).toEqual([
+    expect(report.source!.missingInCode).toEqual([
       expect.objectContaining({ key: 'missing.everywhere' }),
     ]);
-    expect(source.hardcoded.map((h) => h.text)).toEqual(['Hardcoded label']);
+    expect(report.source!.hardcoded.map((h) => h.text)).toEqual(['Hardcoded label']);
 
     const lax = countProblems(report, false);
     expect(lax.errors).toBe(2); // varMismatch + missingInCode

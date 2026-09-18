@@ -1,0 +1,6 @@
+{
+  "greeting": "Hello {{name}}, welcome back!",
+  "nav": { "home": "Home", "settings": "Settings" },
+  "checkout": { "total": "Total", "tax": "Tax" },
+  "profile": { "bio": "Biography", "name": "Name" }
+}

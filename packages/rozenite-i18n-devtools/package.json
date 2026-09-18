@@ -18,11 +18,15 @@
       "types": "./dist/sdk/sdk.d.ts",
       "default": "./dist/sdk/sdk.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./metro": {
+      "types": "./dist/metro/metro.d.ts",
+      "default": "./dist/metro/metro.js"
+    }
   },
   "files": [
-    "bin",
     "dist",
+    "metro.ts",
     "react-native.ts",
     "sdk.ts",
     "rozenite.config.ts",
@@ -90,8 +94,5 @@
   "homepage": "https://github.com/sbaiahmed1/rozenite-i18n-devtools#readme",
   "bugs": {
     "url": "https://github.com/sbaiahmed1/rozenite-i18n-devtools/issues"
-  },
-  "bin": {
-    "rozenite-i18n-scan": "./bin/i18n-scan.mjs"
   }
 }

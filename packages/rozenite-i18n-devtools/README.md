@@ -56,27 +56,37 @@ export default function App() {
 }
 ```
 
-## Static checks — no app running
+## The Files tab — static checks, no app interaction
 
-The runtime panel only sees what actually executes. The bundled scanner is the other half: it
-reads the files and costs the app nothing.
+The runtime tabs only see what actually executes. The **Files** tab is the other half: the Metro
+dev server reads your locale JSONs and source from disk and the panel shows the diff — nothing
+runs on the device for this.
 
-```bash
-npx rozenite-i18n-scan --locales src/locales --src src
+One wrapper in `metro.config.js` (files live on your machine, so only Metro can read them):
+
+```js
+const { withRozeniteI18nScan } = require('rozenite-i18n-devtools/metro');
+
+module.exports = withRozeniteI18nScan(config, {
+  locales: './src/locales',  // <lng>.json files, or <lng>/<ns>.json folders
+  src: './src',              // omit to skip the source checks
+  ref: 'en',
+});
 ```
+
+It composes with `withRozenite` in either order. The tab then reports:
 
 | Check | Severity |
 |---|---|
-| Keys missing per locale vs the reference (`--ref en`) | error |
+| Keys missing per locale vs the reference | error |
 | `{{variable}}` mismatches between reference and translation | error |
 | `t('…')` keys used in code but absent from the reference JSON | error |
 | Stale keys not in the reference | warning |
-| Hardcoded JSX text that never goes through i18n (heuristic) | warning (`--strict` promotes) |
+| Hardcoded JSX text that never goes through i18n (heuristic) | warning |
 
-Both `locales/en.json` and `locales/en/<ns>.json` layouts are recognised. `--json` for machines,
-non-zero exit on errors for CI. Dynamic keys — ``t(`x.${'{'}y}`)`` — are counted but cannot be
-verified statically; that is exactly what the runtime panel is for, and vice versa: the scanner
-covers screens nobody has opened.
+Dynamic keys — ``t(`x.${'{'}y}`)`` — are counted but cannot be verified statically; that is exactly
+what the runtime tabs are for, and vice versa: the file scan covers screens nobody has opened.
+Without the wrapper the tab explains itself and the runtime tabs work as before.
 
 ## Performance
 
