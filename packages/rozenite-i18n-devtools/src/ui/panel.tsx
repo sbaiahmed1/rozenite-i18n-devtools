@@ -17,14 +17,24 @@ import type {
   I18nSnapshot,
   InterpolationMissRecord,
   KeyDetail,
+  LocaleCoverage,
   MissingKeyRecord,
 } from '../shared/types';
 // Types only — scan-core is Node code; the values live behind the Metro HTTP route.
 import type { ScanReport } from '../node/scan-core';
+import { countIssues, localeGapKeys, mergeIssues } from './merge';
+import type { Issue, IssueKind } from './merge';
 
 const PLUGIN_ID = 'rozenite-i18n-devtools';
 const SCAN_ROUTE = '/_rozenite-i18n/scan.json'; // keep in sync with src/node/with-i18n-scan.ts
-type Tab = 'coverage' | 'missing' | 'interpolation' | 'files';
+
+/**
+ * Two tabs, matching the two questions a user brings to the panel: "what's broken?"
+ * (Issues — the merged runtime + static list) and "how translated is each language?"
+ * (Languages). The scorecard above them is always visible and doubles as navigation.
+ */
+type Tab = 'issues' | 'languages';
+type Filter = IssueKind | 'all';
 
 type ScanPayload = ScanReport & { errors: number; warnings: number; scannedAtMs: number };
 type ScanState =
@@ -32,7 +42,13 @@ type ScanState =
   | { kind: 'unavailable' } // route absent: the metro wrapper is not installed
   | { kind: 'ready'; report: ScanPayload };
 
+type Selection = { key: string; ns?: string; issue?: Issue };
+
 const pct = (n: number, d: number) => (d === 0 ? 100 : Math.round((n / d) * 100));
+
+const METRO_SNIPPET =
+  "const { withRozeniteI18nScan } = require('rozenite-i18n-devtools/metro');  " +
+  "module.exports = withRozeniteI18nScan(config, { locales: './src/locales', src: './src' });";
 
 export default function I18nPanel() {
   const client = useRozeniteDevToolsClient<I18nEventMap>({ pluginId: PLUGIN_ID });
@@ -40,13 +56,15 @@ export default function I18nPanel() {
   const [snapshot, setSnapshot] = useState<I18nSnapshot | null>(null);
   const [missing, setMissing] = useState<MissingKeyRecord[]>([]);
   const [interpolation, setInterpolation] = useState<InterpolationMissRecord[]>([]);
-  const [tab, setTab] = useState<Tab>('coverage');
+  const [tab, setTab] = useState<Tab>('issues');
+  const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<{ key: string; ns?: string } | null>(null);
+  const [selected, setSelected] = useState<Selection | null>(null);
   const [scan, setScan] = useState<ScanState>({ kind: 'loading' });
   const [detail, setDetail] = useState<KeyDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [showWarnings, setShowWarnings] = useState(false);
 
   const rpc = useMemo(() => (client ? createRozeniteRpc<I18nMethods>(client) : null), [client]);
 
@@ -170,23 +188,24 @@ export default function I18nPanel() {
     setSelected(null);
   }, [rpc]);
 
+  const report = scan.kind === 'ready' ? scan.report : null;
+  const issues = useMemo(
+    () => mergeIssues(missing, interpolation, report),
+    [missing, interpolation, report],
+  );
+  const counts = useMemo(() => countIssues(issues), [issues]);
+
   const q = query.trim().toLowerCase();
-  const filteredMissing = useMemo(
-    () => (q ? missing.filter((r) => r.key.toLowerCase().includes(q) || r.ns.toLowerCase().includes(q)) : missing),
-    [missing, q],
-  );
-  const filteredInterp = useMemo(
-    () =>
-      q
-        ? interpolation.filter(
-            (r) =>
-              r.variable.toLowerCase().includes(q) ||
-              r.key.toLowerCase().includes(q) ||
-              r.template.toLowerCase().includes(q),
-          )
-        : interpolation,
-    [interpolation, q],
-  );
+  const visibleIssues = useMemo(() => {
+    const byKind = filter === 'all' ? issues : issues.filter((i) => i.kind === filter);
+    if (!q) return byKind;
+    return byKind.filter(
+      (i) =>
+        i.title.toLowerCase().includes(q) ||
+        (i.variable?.toLowerCase().includes(q) ?? false) ||
+        (i.ns?.toLowerCase().includes(q) ?? false),
+    );
+  }, [issues, filter, q]);
 
   if (!client) {
     return (
@@ -214,338 +233,529 @@ export default function I18nPanel() {
   const { adapter, locales, activeLng, referenceLng } = snapshot;
   const feedDisabled = !adapter.capabilities.missingKeyFeed;
 
+  const openIssue = (issue: Issue) => {
+    if (issue.key) setSelected({ key: issue.key, ns: issue.ns, issue });
+  };
+
   return (
     <PluginShell>
       <PluginShell.Body>
-        <div style={{ display: 'flex', height: '100%', minHeight: 0, fontSize: 13 }}>
-          {/* ---------------------------------------------------------- locales */}
-          <aside
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontSize: 13 }}>
+          {/* ------------------------------------------------------- scorecard */}
+          <Scorecard
+            counts={counts}
+            locales={locales}
+            referenceLng={referenceLng}
+            onIssues={() => setTab('issues')}
+            onLanguages={() => setTab('languages')}
+          />
+
+          {/* -------------------------------------------------------- tab strip */}
+          <div
             style={{
-              width: 240,
-              flex: 'none',
-              overflowY: 'auto',
-              borderRight: '1px solid var(--color-border)',
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+              flexWrap: 'wrap',
               padding: 8,
+              borderBottom: '1px solid var(--color-border)',
             }}
           >
-            <div style={{ padding: '4px 8px 8px', opacity: 0.6, fontSize: 11, letterSpacing: '.08em' }}>
-              LOCALES · ref {referenceLng}
+            <ToggleGroup
+              value={[tab]}
+              onValueChange={(v: readonly string[]) => {
+                // Base UI ToggleGroup is multi-value; we use it as a single-select tab
+                // strip, so ignore the empty array you get from clicking the active item.
+                if (v.length > 0) setTab(v[0] as Tab);
+              }}
+            >
+              <ToggleGroup.Item value="issues">{`Issues (${counts.errors})`}</ToggleGroup.Item>
+              <ToggleGroup.Item value="languages">Languages</ToggleGroup.Item>
+            </ToggleGroup>
+            <div style={{ flex: 1, minWidth: 120 }}>
+              <QueryField
+                value={query}
+                onValueChange={setQuery}
+                onClear={() => setQuery('')}
+                placeholder="Filter keys…"
+              />
             </div>
-            {locales.map((l) => (
-              <button
-                key={l.lng}
-                onClick={() => setLocale(l.lng)}
-                disabled={busy || !adapter.capabilities.localeSwitching}
-                style={{
-                  display: 'flex',
-                  width: '100%',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 8,
-                  padding: '7px 8px',
-                  marginBottom: 2,
-                  border: 0,
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  background: l.isActive ? 'var(--color-sidebar-accent)' : 'transparent',
-                  color: 'inherit',
-                  font: 'inherit',
-                }}
-              >
-                <span>
-                  {l.lng}
-                  {l.dir === 'rtl' ? <span style={{ opacity: 0.5 }}> · rtl</span> : null}
-                  {l.notLoadedNamespaces.length > 0 && (
-                    <span
-                      style={{ opacity: 0.5 }}
-                      title={`Not loaded yet: ${l.notLoadedNamespaces.join(', ')}. These namespaces are excluded from the percentage.`}
-                    >
-                      {' '}
-                      · partial
-                    </span>
-                  )}
-                </span>
-                {l.lng === referenceLng ? (
-                  // Never a percentage: every locale is measured AGAINST this one, so it is
-                  // always trivially 100%. Showing that next to a Missing tab reporting gaps
-                  // in this very locale reads as a contradiction.
-                  <Badge tone="neutral">reference</Badge>
-                ) : l.notLoaded ? (
-                  <Badge tone="neutral">not loaded</Badge>
-                ) : (
-                  <Badge tone={l.fallingBackCount === 0 ? 'success' : l.fallingBackCount > l.total / 4 ? 'danger' : 'warning'}>
-                    {pct(l.translated, l.total)}%
-                  </Badge>
-                )}
-              </button>
-            ))}
-          </aside>
+            {scan.kind === 'ready' && <Button onClick={() => fetchScan(true)}>Rescan</Button>}
+            <Button onClick={clearFeeds}>Clear</Button>
+          </div>
 
-          {/* ------------------------------------------------------------- main */}
-          <section style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          {/* ----------------------------------------------------- issue filters */}
+          {tab === 'issues' && (
             <div
               style={{
                 display: 'flex',
-                gap: 10,
+                gap: 6,
                 alignItems: 'center',
-                padding: 8,
+                padding: '6px 8px',
                 borderBottom: '1px solid var(--color-border)',
               }}
             >
               <ToggleGroup
-                value={[tab]}
+                value={[filter]}
                 onValueChange={(v: readonly string[]) => {
-                  // Base UI ToggleGroup is multi-value; we use it as a single-select tab
-                  // strip, so ignore the empty array you get from clicking the active item.
-                  if (v.length > 0) setTab(v[0] as Tab);
+                  if (v.length > 0) setFilter(v[0] as Filter);
                 }}
               >
-                <ToggleGroup.Item value="coverage">Coverage</ToggleGroup.Item>
-                <ToggleGroup.Item value="missing">{`Missing (${missing.length})`}</ToggleGroup.Item>
-                <ToggleGroup.Item value="interpolation">
-                  {`Interpolation (${interpolation.length})`}
-                </ToggleGroup.Item>
-                <ToggleGroup.Item value="files">
-                  {scan.kind === 'ready' ? `Files (${scan.report.errors})` : 'Files'}
-                </ToggleGroup.Item>
+                <ToggleGroup.Item value="all">{`All (${counts.byKind.all})`}</ToggleGroup.Item>
+                <ToggleGroup.Item value="missing">{`Missing (${counts.byKind.missing})`}</ToggleGroup.Item>
+                <ToggleGroup.Item value="variables">{`Variables (${counts.byKind.variables})`}</ToggleGroup.Item>
+                <ToggleGroup.Item value="hardcoded">{`Hardcoded (${counts.byKind.hardcoded})`}</ToggleGroup.Item>
+                <ToggleGroup.Item value="stale">{`Stale (${counts.byKind.stale})`}</ToggleGroup.Item>
               </ToggleGroup>
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <QueryField
-                  value={query}
-                  onValueChange={setQuery}
-                  onClear={() => setQuery('')}
-                  placeholder="Filter keys…"
-                />
-              </div>
-              <Button onClick={clearFeeds}>Clear</Button>
             </div>
+          )}
 
-            {/* Adapter warnings describe the RUNTIME instrumentation (saveMissing and
-                friends). The Files tab is fed by Metro reading disk — showing them there
-                puts an i18next configuration note on a screen about JSON files. */}
-            {tab !== 'files' && adapter.warnings.length > 0 && (
-              <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {adapter.warnings.map((w, i) => (
-                  <Alert key={i} tone="warning">
-                    <Alert.Description>{w}</Alert.Description>
-                  </Alert>
-                ))}
-              </div>
-            )}
-
-            <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-              <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-              {tab === 'files' && (
-                <FilesTab
-                  scan={scan}
-                  onRescan={() => fetchScan(true)}
+          {/* ------------------------------------------------------------- body */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+            <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+              {tab === 'issues' && (
+                <IssuesTab
+                  issues={visibleIssues}
+                  total={issues.length}
+                  feedDisabled={feedDisabled}
+                  scanAvailable={scan.kind === 'ready'}
+                  onSelect={openIssue}
+                />
+              )}
+              {tab === 'languages' && (
+                <LanguagesTab
+                  snapshot={snapshot}
+                  report={report}
+                  query={q}
+                  busy={busy}
+                  onActivate={setLocale}
                   onSelect={(key, ns) => setSelected({ key, ns })}
                 />
               )}
-              {tab === 'coverage' && (
-                <CoverageTab
-                  snapshot={snapshot}
-                  query={q}
-                  onSelect={(k) => {
-                    // A coverage row is `ns:key` only when the app has several namespaces.
-                    const hasNs = snapshot.namespaces.length > 1 && k.includes(':');
-                    setSelected(
-                      hasNs
-                        ? { ns: k.slice(0, k.indexOf(':')), key: k.slice(k.indexOf(':') + 1) }
-                        : { key: k },
-                    );
-                  }}
-                />
-              )}
-
-              {tab === 'missing' &&
-                (feedDisabled ? (
-                  <EmptyState
-                    title="Missing-key feed is off"
-                    description="i18next only emits missingKey when saveMissing is true. See the warning above."
-                  />
-                ) : filteredMissing.length === 0 ? (
-                  <EmptyState
-                    title={missing.length ? 'No matches' : 'Nothing missing on the screens you have opened'}
-                    description={
-                      missing.length
-                        ? 'Nothing matches that filter.'
-                        : 'Rows appear as screens render — navigate and every key that screen ' +
-                          'requests is checked automatically. Only keys resolved behind a tap or ' +
-                          'a condition wait for that to happen. This catches typos and ' +
-                          `unextracted strings: keys that resolve in no locale at all. Keys missing only in ${activeLng} ` +
-                          'fall back silently and never fire an event — Coverage finds those.'
-                    }
-                  />
-                ) : (
-                  <VirtualizedList
-                    ariaLabel="Missing keys"
-                    data={filteredMissing}
-                    followOutput
-                    onItemClick={(r) => setSelected({ key: r.key, ns: r.ns })}
-                    getItemKey={(r) => r.id}
-                    getItemTextValue={(r) => r.key}
-                    renderItem={(r) => (
-                      <div style={{ padding: '7px 12px', display: 'flex', gap: 10, alignItems: 'baseline' }}>
-                        {/* The locale SET, not the latest sighting — stable while you switch
-                            language, and it says whether the key is missed everywhere. */}
-                        <span style={{ display: 'flex', gap: 3 }}>
-                          {[...r.observedLocales].sort().map((l) => (
-                            <Badge key={l} tone="danger">
-                              {l}
-                            </Badge>
-                          ))}
-                        </span>
-                        <code style={{ flex: 1, minWidth: 0, wordBreak: 'break-all' }}>{r.key}</code>
-                        <span style={{ opacity: 0.5, fontSize: 11 }}>{r.ns}</span>
-                      </div>
-                    )}
-                  />
-                ))}
-
-              {tab === 'interpolation' &&
-                (filteredInterp.length === 0 ? (
-                  <EmptyState
-                    title={interpolation.length ? 'No matches' : 'No interpolation misses yet'}
-                    description={
-                      interpolation.length
-                        ? 'Nothing matches that filter.'
-                        : 'Variables like {{name}} that are never supplied show up here, once the ' +
-                          'string renders. i18next does not log these even with debug: true — the ' +
-                          'warning sits behind skipOnVariables, which defaults to true.'
-                    }
-                  />
-                ) : (
-                  <VirtualizedList
-                    ariaLabel="Interpolation misses"
-                    data={filteredInterp}
-                    followOutput
-                    onItemClick={(r) => setSelected({ key: r.key, ns: r.ns })}
-                    getItemKey={(r) => r.id}
-                    getItemTextValue={(r) => r.variable}
-                    renderItem={(r) => (
-                      <div
-                        style={{ padding: '7px 12px', display: 'flex', gap: 10, alignItems: 'baseline' }}
-                        title={r.template}
-                      >
-                        <Badge tone="warning">{`{{${r.variable}}}`}</Badge>
-                        <code style={{ flex: 1, minWidth: 0, wordBreak: 'break-all' }}>{r.key}</code>
-                        {/* The locale SET, not the latest template: stable, and it says whether
-                            one translation is at fault or the variable is never passed at all. */}
-                        <span style={{ display: 'flex', gap: 3 }}>
-                          {[...r.locales].sort().map((l) => (
-                            <Badge key={l} tone="neutral">
-                              {l}
-                            </Badge>
-                          ))}
-                        </span>
-                      </div>
-                    )}
-                  />
-                ))}
-              </div>
-
-              {selected && (
-                <KeyDetailPane
-                  selection={selected}
-                  detail={detail}
-                  error={detailError}
-                  activeLng={activeLng}
-                  onClose={() => setSelected(null)}
-                />
-              )}
             </div>
-          </section>
+
+            {selected && (
+              <KeyDetailPane
+                selection={selected}
+                detail={detail}
+                error={detailError}
+                activeLng={activeLng}
+                onClose={() => setSelected(null)}
+              />
+            )}
+          </div>
+
+          {/* ---------------------------------------------------------- footer */}
+          {showWarnings && adapter.warnings.length > 0 && (
+            <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {adapter.warnings.map((w, i) => (
+                <Alert key={i} tone="warning">
+                  <Alert.Description>{w}</Alert.Description>
+                </Alert>
+              ))}
+            </div>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              gap: 14,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              padding: '5px 10px',
+              borderTop: '1px solid var(--color-border)',
+              fontSize: 11,
+              color: 'var(--color-muted-foreground)',
+            }}
+          >
+            <span>
+              {adapter.library}
+              {adapter.libraryVersion ? ` ${adapter.libraryVersion}` : ''}
+            </span>
+            <span>
+              active <code>{activeLng}</code> · ref <code>{referenceLng}</code>
+            </span>
+            {scan.kind === 'ready' && (
+              <span title={`${report?.localesDir} — scanned locale files via Metro`}>
+                files: on
+              </span>
+            )}
+            {scan.kind === 'loading' && <span>files: scanning…</span>}
+            {scan.kind === 'unavailable' && (
+              <span title={METRO_SNIPPET}>
+                files: off — add withRozeniteI18nScan to metro.config.js
+              </span>
+            )}
+            {adapter.warnings.length > 0 && (
+              <button
+                onClick={() => setShowWarnings((s) => !s)}
+                title={adapter.warnings.join('\n')}
+                style={{
+                  border: 0,
+                  background: 'none',
+                  padding: 0,
+                  font: 'inherit',
+                  cursor: 'pointer',
+                  color: 'var(--color-warning)',
+                }}
+              >
+                ⚠ {adapter.warnings.length} warning{adapter.warnings.length === 1 ? '' : 's'}
+              </button>
+            )}
+          </div>
         </div>
       </PluginShell.Body>
     </PluginShell>
   );
 }
 
-function CoverageTab({
-  snapshot,
-  query,
-  onSelect,
+/* ================================================================== scorecard */
+
+/**
+ * Always-visible health read, and the panel's shortcuts: the error/warning tiles land on
+ * Issues, a locale tile lands on Languages. Absorbs the old Coverage tab's headline.
+ */
+function Scorecard({
+  counts,
+  locales,
+  referenceLng,
+  onIssues,
+  onLanguages,
 }: {
-  snapshot: I18nSnapshot;
-  query: string;
-  onSelect: (key: string) => void;
+  counts: { errors: number; warnings: number };
+  locales: LocaleCoverage[];
+  referenceLng: string;
+  onIssues: () => void;
+  onLanguages: () => void;
 }) {
-  const rows = useMemo(() => {
-    const active = snapshot.locales.find((l) => l.isActive);
-    if (!active) return [];
-    return query ? active.fallingBack.filter((k) => k.toLowerCase().includes(query)) : active.fallingBack;
-  }, [snapshot, query]);
+  const tile: React.CSSProperties = {
+    flex: '1 1 90px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 0,
+    padding: '6px 12px',
+    border: '1px solid var(--color-border)',
+    borderRadius: 6,
+    background: 'var(--color-card)',
+    cursor: 'pointer',
+    font: 'inherit',
+    color: 'inherit',
+    textAlign: 'left',
+  };
+  const value: React.CSSProperties = {
+    fontSize: 18,
+    fontWeight: 600,
+    fontVariantNumeric: 'tabular-nums',
+    lineHeight: 1.3,
+  };
+  const label: React.CSSProperties = {
+    fontSize: 10,
+    letterSpacing: '.08em',
+    textTransform: 'uppercase',
+    color: 'var(--color-muted-foreground)',
+  };
 
-  const active = snapshot.locales.find((l) => l.isActive);
-  if (!active) return <EmptyState title="No active locale" description="" />;
-
-  if (active.lng === snapshot.referenceLng) {
-    return (
-      <EmptyState
-        title={`${active.lng} is the reference locale`}
-        description={
-          `Every other locale is measured against this one, so it has nothing to fall back ` +
-          `to and no percentage to report — it defines the ${active.total} keys that count. ` +
-          `That does NOT mean it is complete: keys your code requests that are missing from ` +
-          `${active.lng} too resolve nowhere, so they appear in the Missing tab rather than here. ` +
-          `Switch to another locale to see what falls back to ${active.lng}.`
-        }
-      />
-    );
-  }
-
-  if (active.fallingBackCount === 0) {
-    return (
-      <EmptyState
-        title={`${active.lng} is fully translated`}
-        description={`All ${active.total} keys from ${snapshot.referenceLng} are present.`}
-      />
-    );
-  }
+  const localeTone = (l: LocaleCoverage): string => {
+    if (l.notLoaded) return 'var(--color-muted-foreground)';
+    if (l.fallingBackCount === 0) return 'var(--color-success)';
+    return l.fallingBackCount > l.total / 4 ? 'var(--color-danger)' : 'var(--color-warning)';
+  };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {active.notLoadedNamespaces.length > 0 && (
-        <div style={{ padding: '10px 12px 0' }}>
-          <Alert tone="info">
-            <Alert.Description>
-              {active.notLoadedNamespaces.length === 1
-                ? `The "${active.notLoadedNamespaces[0]}" namespace has not loaded for ${active.lng} yet, so its keys are excluded from these numbers — unknown, not untranslated.`
-                : `${active.notLoadedNamespaces.length} namespaces have not loaded for ${active.lng} yet (${active.notLoadedNamespaces.join(', ')}), so their keys are excluded from these numbers — unknown, not untranslated.`}
-            </Alert.Description>
-          </Alert>
-        </div>
-      )}
-      <div style={{ padding: '10px 12px', fontSize: 12, lineHeight: 1.55, opacity: 0.85 }}>
-        <strong>{active.fallingBackCount}</strong> of {active.total} keys are missing in{' '}
-        <strong>{active.lng}</strong> and silently render {snapshot.referenceLng} text.{' '}
-        <span style={{ opacity: 0.7 }}>
-          These emit no missingKey event, so the Missing tab cannot see them.
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: 8 }}>
+      <button onClick={onIssues} style={tile}>
+        <span style={{ ...value, color: counts.errors > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
+          {counts.errors}
         </span>
-        {active.fallingBackCount > active.fallingBack.length && (
-          <span style={{ opacity: 0.7 }}> Showing the first {active.fallingBack.length}.</span>
-        )}
-      </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <VirtualizedList
-          ariaLabel="Keys falling back"
-          data={rows}
-          onItemClick={onSelect}
-          getItemKey={(k) => k}
-          getItemTextValue={(k) => k}
-          renderItem={(k) => (
-            <div style={{ padding: '6px 12px', display: 'flex', gap: 10 }}>
-              <Badge tone="warning">fallback</Badge>
-              <code style={{ wordBreak: 'break-all' }}>{k}</code>
-            </div>
-          )}
-        />
-      </div>
+        <span style={label}>errors</span>
+      </button>
+      <button onClick={onIssues} style={tile}>
+        <span style={{ ...value, color: counts.warnings > 0 ? 'var(--color-warning)' : 'var(--color-success)' }}>
+          {counts.warnings}
+        </span>
+        <span style={label}>warnings</span>
+      </button>
+      {locales
+        .filter((l) => l.lng !== referenceLng)
+        .map((l) => (
+          <button key={l.lng} onClick={onLanguages} style={tile}>
+            <span style={{ ...value, color: localeTone(l) }}>
+              {l.notLoaded ? '·' : `${pct(l.translated, l.total)}%`}
+            </span>
+            <span style={label}>
+              {l.lng}
+              {l.isActive ? ' · active' : ''}
+            </span>
+          </button>
+        ))}
     </div>
   );
 }
+
+/* ================================================================ issues tab */
+
+const KIND_TONE: Record<IssueKind, 'danger' | 'warning'> = {
+  parse: 'danger',
+  missing: 'danger',
+  variables: 'danger',
+  hardcoded: 'warning',
+  stale: 'warning',
+};
+
+function IssuesTab({
+  issues,
+  total,
+  feedDisabled,
+  scanAvailable,
+  onSelect,
+}: {
+  issues: Issue[];
+  total: number;
+  feedDisabled: boolean;
+  scanAvailable: boolean;
+  onSelect: (issue: Issue) => void;
+}) {
+  if (issues.length === 0) {
+    if (total > 0) {
+      return <EmptyState title="No matches" description="Nothing matches that filter." />;
+    }
+    const parts: string[] = [];
+    parts.push(
+      feedDisabled
+        ? 'The runtime feed is off — i18next only emits missingKey when saveMissing is true (see the warning in the footer).'
+        : 'Runtime findings appear as screens render — navigate the app and every key each screen requests is checked automatically.',
+    );
+    parts.push(
+      scanAvailable
+        ? 'The file scan found nothing wrong on disk either.'
+        : 'File checks are off — add withRozeniteI18nScan to metro.config.js to also catch problems on screens you have not opened (see the footer).',
+    );
+    return <EmptyState title="Nothing broken yet" description={parts.join(' ')} />;
+  }
+
+  return (
+    <VirtualizedList
+      ariaLabel="Issues"
+      data={issues}
+      onItemClick={(i) => onSelect(i)}
+      getItemKey={(i) => i.id}
+      getItemTextValue={(i) => i.title}
+      renderItem={(i) => (
+        <div
+          style={{
+            padding: '7px 12px',
+            display: 'flex',
+            gap: 8,
+            alignItems: 'baseline',
+            cursor: i.key ? 'pointer' : 'default',
+          }}
+          title={i.note}
+        >
+          <Badge tone={KIND_TONE[i.kind]}>{i.kind}</Badge>
+          <code style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
+            {i.title}
+            {i.variable ? (
+              <span style={{ color: 'var(--color-warning)' }}>{` · {{${i.variable}}}`}</span>
+            ) : null}
+          </code>
+          {/* Where the evidence came from. Both badges on one row = seen live AND on
+              disk — the highest-confidence finding the panel can make. */}
+          {i.sources.runtime && <Badge tone="info">runtime</Badge>}
+          {i.sources.files && <Badge tone="neutral">files</Badge>}
+          {i.fileRefs.length > 0 && (
+            <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11, flex: 'none' }}>
+              {i.fileRefs[0]}
+              {i.fileRefs.length > 1 ? ` +${i.fileRefs.length - 1}` : ''}
+            </span>
+          )}
+          {i.locales.length > 0 && (
+            <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11, flex: 'none' }}>
+              {i.locales.join(' ')}
+            </span>
+          )}
+        </div>
+      )}
+    />
+  );
+}
+
+/* ============================================================= languages tab */
+
+/**
+ * The old Coverage tab's depth, one block per locale: the bar, the keys that silently
+ * fall back (union of what runtime saw and what the scan found on disk), make-active.
+ * Deliberately NOT part of Issues — a silent fallback is translation debt, not a code
+ * bug, and listing it there would repeat every gap once per locale.
+ */
+const GAP_DISPLAY_CAP = 50;
+
+function LanguagesTab({
+  snapshot,
+  report,
+  query,
+  busy,
+  onActivate,
+  onSelect,
+}: {
+  snapshot: I18nSnapshot;
+  report: ScanReport | null;
+  query: string;
+  busy: boolean;
+  onActivate: (lng: string) => void;
+  onSelect: (key: string, ns?: string) => void;
+}) {
+  const { referenceLng, namespaces } = snapshot;
+
+  const selectKey = (k: string) => {
+    // A gap row is `ns:key` only when the app has several namespaces.
+    const hasNs = namespaces.length > 1 && k.includes(':');
+    if (hasNs) onSelect(k.slice(k.indexOf(':') + 1), k.slice(0, k.indexOf(':')));
+    else onSelect(k);
+  };
+
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 10,
+    letterSpacing: '.08em',
+    textTransform: 'uppercase',
+    color: 'var(--color-muted-foreground)',
+  };
+
+  return (
+    <div style={{ height: '100%', overflowY: 'auto' }}>
+      {snapshot.locales.map((l) => {
+        const isRef = l.lng === referenceLng;
+        const gaps = isRef ? [] : localeGapKeys(l.fallingBack, report?.missing[l.lng]);
+        const shown = query ? gaps.filter((k) => k.toLowerCase().includes(query)) : gaps;
+        const gapTotal = Math.max(l.fallingBackCount, gaps.length);
+        return (
+          <div
+            key={l.lng}
+            style={{
+              padding: '12px 14px',
+              borderBottom: '1px solid var(--color-border)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <code style={{ fontWeight: 600 }}>{l.lng}</code>
+              {l.dir === 'rtl' && <span style={{ color: 'var(--color-muted-foreground)' }}>rtl</span>}
+              {isRef ? (
+                // Never a percentage: every locale is measured AGAINST this one, so it is
+                // always trivially 100%.
+                <Badge tone="neutral">reference</Badge>
+              ) : l.notLoaded ? (
+                <Badge tone="neutral">not loaded</Badge>
+              ) : (
+                <>
+                  <Badge
+                    tone={
+                      l.fallingBackCount === 0
+                        ? 'success'
+                        : l.fallingBackCount > l.total / 4
+                          ? 'danger'
+                          : 'warning'
+                    }
+                  >
+                    {pct(l.translated, l.total)}%
+                  </Badge>
+                  <span style={{ color: 'var(--color-muted-foreground)' }}>
+                    {l.translated}/{l.total} keys
+                  </span>
+                </>
+              )}
+              {l.isActive ? (
+                <Badge tone="info">active</Badge>
+              ) : (
+                <span style={{ marginLeft: 'auto' }}>
+                  <Button onClick={() => onActivate(l.lng)} disabled={busy}>
+                    Make active
+                  </Button>
+                </span>
+              )}
+            </div>
+
+            {!isRef && !l.notLoaded && (
+              <div
+                aria-hidden
+                style={{
+                  height: 5,
+                  borderRadius: 3,
+                  background: 'var(--color-muted)',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    width: `${pct(l.translated, l.total)}%`,
+                    height: '100%',
+                    background: 'var(--color-primary)',
+                  }}
+                />
+              </div>
+            )}
+
+            {isRef && (
+              <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
+                Defines the {l.total} keys every other locale is measured against. Keys missing
+                here too resolve nowhere and appear under Issues instead.
+              </span>
+            )}
+
+            {l.notLoadedNamespaces.length > 0 && (
+              <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
+                Not loaded yet: {l.notLoadedNamespaces.join(', ')} — excluded from the numbers
+                (unknown, not untranslated).
+              </span>
+            )}
+
+            {shown.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={sectionLabel}>
+                  falls back silently to {referenceLng} — {gapTotal} key{gapTotal === 1 ? '' : 's'}
+                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {shown.slice(0, GAP_DISPLAY_CAP).map((k) => (
+                    <button
+                      key={k}
+                      onClick={() => selectKey(k)}
+                      style={{
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 4,
+                        background: 'var(--color-card)',
+                        color: 'inherit',
+                        font: 'inherit',
+                        fontSize: 12,
+                        padding: '2px 7px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <code>{k}</code>
+                    </button>
+                  ))}
+                  {shown.length > GAP_DISPLAY_CAP && (
+                    <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
+                      +{shown.length - GAP_DISPLAY_CAP} more — use the filter box
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {!isRef && !l.notLoaded && gaps.length > 0 && shown.length === 0 && (
+              <span style={{ color: 'var(--color-muted-foreground)', fontSize: 12 }}>
+                No gap keys match that filter.
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================== detail pane */
 
 /**
  * The payoff for `getKey`: shows every locale's value for one key and which locale the
@@ -563,12 +773,13 @@ function KeyDetailPane({
   activeLng,
   onClose,
 }: {
-  selection: { key: string; ns?: string };
+  selection: Selection;
   detail: KeyDetail | null;
   error: string | null;
   activeLng: string;
   onClose: () => void;
 }) {
+  const issue = selection.issue;
   return (
     <aside
       style={{
@@ -597,6 +808,32 @@ function KeyDetailPane({
           ✕
         </Button>
       </div>
+
+      {issue && (
+        <div style={{ padding: '10px 12px 0', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+          <Row label="Evidence">
+            <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'baseline' }}>
+              {issue.sources.runtime && <Badge tone="info">runtime</Badge>}
+              {issue.sources.files && <Badge tone="neutral">files</Badge>}
+              {issue.sources.runtime && issue.sources.files && (
+                <span style={{ color: 'var(--color-muted-foreground)' }}>— seen live and on disk</span>
+              )}
+            </span>
+          </Row>
+          {issue.note && <div style={{ color: 'var(--color-muted-foreground)' }}>{issue.note}</div>}
+          {issue.fileRefs.length > 0 && (
+            <Row label="Used at">
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {issue.fileRefs.map((f) => (
+                  <code key={f} style={{ fontSize: 11 }}>
+                    {f}
+                  </code>
+                ))}
+              </span>
+            </Row>
+          )}
+        </div>
+      )}
 
       {error && (
         <div style={{ padding: 12 }}>
@@ -702,164 +939,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
         {label}
       </div>
       {children}
-    </div>
-  );
-}
-
-/**
- * Results of the static scan served by the Metro wrapper — the checks that need the files
- * on disk rather than the running app: per-locale diffs of the locale JSONs, {{variable}}
- * mismatches, t() keys absent from the reference, and hardcoded JSX text.
- */
-function FilesTab({
-  scan,
-  onRescan,
-  onSelect,
-}: {
-  scan: ScanState;
-  onRescan: () => void;
-  onSelect: (key: string, ns?: string) => void;
-}) {
-  if (scan.kind === 'loading') {
-    return <EmptyState title="Scanning…" description="Reading the locale files via Metro." />;
-  }
-  if (scan.kind === 'unavailable') {
-    return (
-      <EmptyState
-        title="Static scanning is not wired up"
-        description={
-          'Add the Metro wrapper so the dev server can read your locale files:  ' +
-          "const { withRozeniteI18nScan } = require('rozenite-i18n-devtools/metro');  " +
-          "module.exports = withRozeniteI18nScan(config, { locales: './src/locales', src: './src' });  " +
-          'Then restart Metro. The runtime tabs work without it.'
-        }
-      />
-    );
-  }
-
-  const r = scan.report;
-  const sectionTitle: React.CSSProperties = {
-    fontSize: 10,
-    letterSpacing: '.09em',
-    textTransform: 'uppercase',
-    color: 'var(--color-muted-foreground)',
-    margin: '14px 0 6px',
-  };
-  const row: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'baseline', padding: '3px 0' };
-  const clean = r.errors === 0 && r.warnings === 0 && r.parseErrors.length === 0;
-
-  return (
-    <div style={{ height: '100%', overflowY: 'auto', padding: '10px 12px', fontSize: 12 }}>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <span style={{ color: 'var(--color-muted-foreground)' }}>
-          {r.localesDir} · ref <code>{r.ref}</code> · {r.locales.join(', ')}
-        </span>
-        <Button onClick={onRescan}>Rescan</Button>
-      </div>
-
-      {r.parseErrors.map((e, i) => (
-        <div key={i} style={{ marginTop: 8 }}>
-          <Alert tone="danger">
-            <Alert.Description>{e}</Alert.Description>
-          </Alert>
-        </div>
-      ))}
-
-      {clean && (
-        <div style={{ marginTop: 10 }}>
-          <Alert tone="success">
-            <Alert.Description>
-              Locale files agree with {r.ref}
-              {r.source ? ', and every literal key in the source resolves.' : '.'}
-            </Alert.Description>
-          </Alert>
-        </div>
-      )}
-
-      {Object.entries(r.missing).map(([lng, keys]) => (
-        <div key={lng}>
-          <div style={sectionTitle}>
-            missing in {lng} — {keys.length}
-          </div>
-          {keys.map((k) => (
-            <div key={k} style={{ ...row, cursor: 'pointer' }} onClick={() => onSelect(k)}>
-              <Badge tone="danger">{lng}</Badge>
-              <code>{k}</code>
-            </div>
-          ))}
-        </div>
-      ))}
-
-      {r.varMismatch.length > 0 && (
-        <div>
-          <div style={sectionTitle}>variable mismatches — {r.varMismatch.length}</div>
-          {r.varMismatch.map((v, i) => (
-            <div key={i} style={{ ...row, cursor: 'pointer' }} onClick={() => onSelect(v.key)}>
-              <Badge tone="danger">{v.lng}</Badge>
-              <code>{v.key}</code>
-              <span style={{ color: 'var(--color-muted-foreground)' }}>
-                {r.ref}: {v.refVars.length ? v.refVars.map((x) => `{{${x}}}`).join(' ') : '—'}
-                {'  vs  '}
-                {v.vars.length ? v.vars.map((x) => `{{${x}}}`).join(' ') : '—'}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {r.source && r.source.missingInCode.length > 0 && (
-        <div>
-          <div style={sectionTitle}>
-            keys used in code, absent from {r.ref} — {r.source.missingInCode.length}
-          </div>
-          {r.source.missingInCode.map((m, i) => (
-            <div key={i} style={row}>
-              <code style={{ flex: 'none' }}>{m.key}</code>
-              <span style={{ color: 'var(--color-muted-foreground)' }}>
-                {m.file}:{m.line}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {Object.entries(r.extra).map(([lng, keys]) => (
-        <div key={lng}>
-          <div style={sectionTitle}>
-            stale in {lng} (not in {r.ref}) — {keys.length}
-          </div>
-          {keys.map((k) => (
-            <div key={k} style={row}>
-              <Badge tone="warning">{lng}</Badge>
-              <code>{k}</code>
-            </div>
-          ))}
-        </div>
-      ))}
-
-      {r.source && r.source.hardcoded.length > 0 && (
-        <div>
-          <div style={sectionTitle}>
-            hardcoded JSX text (heuristic) — {r.source.hardcoded.length}
-          </div>
-          {r.source.hardcoded.slice(0, 100).map((h, i) => (
-            <div key={i} style={row}>
-              <Badge tone="warning">text</Badge>
-              <span style={{ minWidth: 0, wordBreak: 'break-word' }}>&ldquo;{h.text}&rdquo;</span>
-              <span style={{ color: 'var(--color-muted-foreground)', flex: 'none' }}>
-                {h.file}:{h.line}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {r.source && r.source.dynamicKeys > 0 && (
-        <div style={{ marginTop: 12, color: 'var(--color-muted-foreground)' }}>
-          {r.source.dynamicKeys} dynamic t() call{r.source.dynamicKeys === 1 ? '' : 's'} the scanner
-          cannot verify — those are what the runtime tabs are for.
-        </div>
-      )}
     </div>
   );
 }

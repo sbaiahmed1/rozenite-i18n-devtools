@@ -2,10 +2,19 @@
 
 Runtime i18n inspector for React Native DevTools, via [Rozenite](https://rozenite.dev).
 
-**Status: 0.1.0 — device-verified end to end.** 40 tests, clean typecheck, and the full loop runs
-in React Native DevTools against an Expo SDK 57 / RN 0.86.3 iOS simulator: coverage, the missing-key
-feed, interpolation misses, locale switching and the key detail pane. Production stripping is
-verified against a real `expo export` bundle — see *Verified* and *Not yet proven* below.
+**Status: 0.2.0.** 67 tests, clean typecheck. The 0.1.0 loop was device-verified end to end in
+React Native DevTools against an Expo SDK 57 / RN 0.86.3 iOS simulator; 0.2.0 redesigns the panel
+on the same protocol. Production stripping is verified against a real `expo export` bundle — see
+*Verified* and *Not yet proven* below.
+
+## The panel
+
+A scorecard that is always visible — error count, warning count, one tile per locale — over two
+tabs matching the two questions you bring to a devtool: **Issues** (what's broken: one merged,
+filterable list of every finding, runtime and static, deduplicated by key) and **Languages** (how
+translated each locale is: coverage bars, the keys that silently fall back, switch locale). A
+one-line status footer replaces banners. The tiles navigate: errors jump to Issues, a locale
+jumps to Languages.
 
 ## What it does
 
@@ -17,12 +26,15 @@ A key missing in German but present in English **is not "missing" to i18next**. 
 `fallbackLng`, renders English, and emits no event. Nothing reports it. It is also the single most
 common i18n bug: *"why is this screen in English?"*
 
-The Coverage tab counts exactly those keys, per locale, against a reference locale.
+The Languages tab counts exactly those keys, per locale, against a reference locale — they are
+deliberately kept out of the Issues list, because a silent fallback is translation debt, not a
+code bug, and listing it there would repeat every gap once per locale.
 
 ### 2. Missing keys — the ones that resolve nowhere
 
-Live and deduplicated, with the set of locales each key was missed in. These are typos and
-unextracted strings.
+Live and deduplicated in the Issues list, with the set of locales each key was missed in. These
+are typos and unextracted strings. When the file scan (below) sees the same key, the row carries
+both a `runtime` and a `files` badge — one problem, corroborated by two detectors.
 
 Rows appear **as screens render** — navigating to a screen checks every key it requests, with no
 interaction. Only keys resolved behind a tap or a condition wait for that to happen.
@@ -56,10 +68,11 @@ export default function App() {
 }
 ```
 
-## The Files tab — static checks, no app interaction
+## File checks — static, no app interaction
 
-The runtime tabs only see what actually executes. The **Files** tab is the other half: the Metro
-dev server reads your locale JSONs and source from disk and the panel shows the diff — nothing
+The runtime instrumentation only sees what actually executes. The file scan is the other half:
+the Metro dev server reads your locale JSONs and source from disk, and the findings land in the
+same Issues list (tagged `files`) and in each locale's gap list on the Languages tab — nothing
 runs on the device for this.
 
 One wrapper in `metro.config.js` (files live on your machine, so only Metro can read them):
@@ -74,7 +87,7 @@ module.exports = withRozeniteI18nScan(config, {
 });
 ```
 
-It composes with `withRozenite` in either order. The tab then reports:
+It composes with `withRozenite` in either order. The scan reports:
 
 | Check | Severity |
 |---|---|
@@ -85,8 +98,8 @@ It composes with `withRozenite` in either order. The tab then reports:
 | Hardcoded JSX text that never goes through i18n (heuristic) | warning |
 
 Dynamic keys — ``t(`x.${'{'}y}`)`` — are counted but cannot be verified statically; that is exactly
-what the runtime tabs are for, and vice versa: the file scan covers screens nobody has opened.
-Without the wrapper the tab explains itself and the runtime tabs work as before.
+what the runtime side is for, and vice versa: the file scan covers screens nobody has opened.
+Without the wrapper the footer says so and the runtime findings work as before.
 
 ## Performance
 
@@ -135,7 +148,7 @@ Use both. They do not overlap.
 
 ```bash
 pnpm install
-pnpm --filter rozenite-i18n-devtools test       # 40 tests
+pnpm --filter rozenite-i18n-devtools test       # 67 tests
 pnpm --filter rozenite-i18n-devtools typecheck
 pnpm --filter rozenite-i18n-devtools build      # stop Metro first — see below
 node spikes/m0-i18next-probe.mjs                # re-run on every i18next major
@@ -150,7 +163,8 @@ node spikes/m0-i18next-probe.mjs                # re-run on every i18next major
   the real adapter (`__rozeniteI18nDevtoolsPristine`, the warning texts, the postProcessor name).
   All absent; only the no-op stub ships. This is the one that matters — a leak would mean
   `saveMissing` writing to a production resource store.
-- **The full panel loop** on an iOS simulator: coverage, both feeds, locale switching, detail pane.
+- **The full 0.1.0 panel loop** on an iOS simulator: coverage, both feeds, locale switching,
+  detail pane. The 0.2.0 redesign reuses that protocol unchanged; its merge layer is unit-tested.
 - **No store pollution.** Covered by a test asserting the reference locale's key count is unchanged
   after a miss.
 - **Namespaces**, including a namespace that has not loaded yet being excluded from coverage rather
