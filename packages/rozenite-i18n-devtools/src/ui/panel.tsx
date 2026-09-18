@@ -436,7 +436,7 @@ function Scorecard({
     padding: '6px 12px',
     border: '1px solid var(--color-border)',
     borderRadius: 6,
-    background: 'var(--color-card)',
+    background: 'transparent',
     cursor: 'pointer',
     font: 'inherit',
     color: 'inherit',
@@ -723,7 +723,7 @@ function LanguagesTab({
                       style={{
                         border: '1px solid var(--color-border)',
                         borderRadius: 4,
-                        background: 'var(--color-card)',
+                        background: 'transparent',
                         color: 'inherit',
                         font: 'inherit',
                         fontSize: 12,
