@@ -321,7 +321,10 @@ export default function I18nPanel() {
               <Button onClick={clearFeeds}>Clear</Button>
             </div>
 
-            {adapter.warnings.length > 0 && (
+            {/* Adapter warnings describe the RUNTIME instrumentation (saveMissing and
+                friends). The Files tab is fed by Metro reading disk — showing them there
+                puts an i18next configuration note on a screen about JSON files. */}
+            {tab !== 'files' && adapter.warnings.length > 0 && (
               <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {adapter.warnings.map((w, i) => (
                   <Alert key={i} tone="warning">
