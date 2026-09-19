@@ -23,8 +23,12 @@ One screen answers the two questions you actually bring to a devtool:
 - **Status footer** — adapter, active/reference locale, whether file checks are on, and any
   setup warnings. One line; no banners.
 
+![The Issues tab: one merged list with runtime and files evidence badges](https://raw.githubusercontent.com/sbaiahmed1/rozenite-i18n-devtools/main/docs/screenshots/issues.png)
+
 Clicking any row opens a detail pane: per-locale values, which locale the resolution chain
 actually lands on, variables, and where the key is used in code.
+
+![The Languages tab: coverage bars and the keys that silently fall back](https://raw.githubusercontent.com/sbaiahmed1/rozenite-i18n-devtools/main/docs/screenshots/languages.png)
 
 ## What it catches
 

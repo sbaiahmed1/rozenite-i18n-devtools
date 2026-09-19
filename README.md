@@ -8,6 +8,8 @@ A scorecard plus two tabs: **Issues** — every i18n problem, runtime and static
 one deduplicated list — and **Languages** — per-locale coverage, including the keys that
 silently fall back and that nothing else reports.
 
+![rozenite-i18n-devtools: scorecard over a merged issues list](https://raw.githubusercontent.com/sbaiahmed1/rozenite-i18n-devtools/main/docs/screenshots/issues.png)
+
 **→ [Package README](packages/rozenite-i18n-devtools/README.md)** — features, install,
 how it avoids interfering with your app, limitations.
 
