@@ -148,3 +148,29 @@ describe('end to end', () => {
     expect(report.parseErrors.join(' ')).toContain('reference locale "en" not found');
   });
 });
+
+describe('findHardcodedText: false positives from the beauty-advisor deployment', () => {
+  it('ignores TypeScript generics that look like >text<', () => {
+    // Rendered as the "): Promise" finding in a real app's authService.ts.
+    expect(findHardcodedText('async refresh(x: Promise<Tokens>): Promise<Tokens> { return x; }')).toEqual([]);
+    expect(findHardcodedText('type A = PayloadAction<Foo>; const f = (a: PayloadAction<Foo>) => a;')).toEqual([]);
+  });
+
+  it('ignores character comparisons around angle brackets', () => {
+    expect(findHardcodedText("part.startsWith('>') && part.endsWith('<')")).toEqual([]);
+  });
+
+  it('ignores string literals that themselves contain markup', () => {
+    // boldTextUtils.tsx: the literal '<b>' + '</b>' pair forms a valid element shape.
+    expect(findHardcodedText("const isBold = part.startsWith('<b>') && part.endsWith('</b>');")).toEqual([]);
+  });
+
+  it('still catches text inside a real element, including multiline', () => {
+    expect(findHardcodedText('<Text style={styles.h}>Continue to payment</Text>')).toEqual([
+      { text: 'Continue to payment', line: 1 },
+    ]);
+    expect(findHardcodedText('<Text>\n  Free shipping\n</Text>')).toEqual([
+      { text: 'Free shipping', line: 2 },
+    ]);
+  });
+});

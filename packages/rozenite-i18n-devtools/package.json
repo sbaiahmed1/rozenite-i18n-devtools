@@ -1,6 +1,6 @@
 {
   "name": "rozenite-i18n-devtools",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Runtime i18n inspector for React Native DevTools — missing keys, per-locale coverage, and live locale switching.",
   "license": "MIT",
   "type": "module",
