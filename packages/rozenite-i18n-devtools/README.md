@@ -175,11 +175,9 @@ node spikes/m0-i18next-probe.mjs                # re-run on every i18next major
 
 ## Not yet proven
 
-1. **Android — never run.** Everything above is the iOS simulator. Nothing here is
-   platform-specific, but that is an assumption, not a result.
-2. **postProcessor cost.** It runs on every `t()` call — a substring check, and a regex only
+1. **postProcessor cost.** It runs on every `t()` call — a substring check, and a regex only
    when `{{` is present. Never measured on a heavy list screen.
-3. **Real multi-namespace apps.** Namespace handling is unit-tested and demo-verified only;
+2. **Real multi-namespace apps.** Namespace handling is unit-tested and demo-verified only;
    no production app with lazy-loaded namespaces has been run against it.
 
 ## License
