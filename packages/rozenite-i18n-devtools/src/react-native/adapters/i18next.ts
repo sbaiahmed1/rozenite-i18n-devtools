@@ -18,7 +18,14 @@ type I18nLike = {
   language?: string;
   languages?: readonly string[];
   options?: Record<string, any>;
-  store?: { data?: Record<string, Record<string, any>>; on?: (e: string, cb: () => void) => void; off?: (e: string, cb: () => void) => void };
+  store?: {
+    data?: Record<string, Record<string, any>>;
+    // Method syntax on purpose: TS checks method parameters bivariantly, so i18next's
+    // precisely-typed store.on(event: 'added' | 'removed', ...) stays assignable under
+    // strictFunctionTypes. A property arrow taking `e: string` rejects the real instance.
+    on?(e: string, cb: (...args: any[]) => void): void;
+    off?(e: string, cb: (...args: any[]) => void): void;
+  };
   services?: Record<string, any>;
   on?: (event: string, cb: (...args: any[]) => void) => void;
   off?: (event: string, cb: (...args: any[]) => void) => void;
